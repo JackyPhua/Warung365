@@ -1,0 +1,87 @@
+/* ═══════════════════════════════════════════════════════════════
+   Warung365 - Warm Orange Hawker Theme
+   温暖橙色 + 暖白底，小贩档口专属，亲民好看
+   ═══════════════════════════════════════════════════════════════ */
+
+:root {
+  /* ── Orange Primary ── */
+  --primary: #FF6B2C;
+  --primary-dark: #E55A1B;
+  --primary-deeper: #CC4A0C;
+  --primary-light: rgba(255,107,44,0.10);
+
+  /* ── Gold/Brown Accent ── */
+  --gold: #D4870A;
+  --gold-dark: #8B4513;
+  --gold-light: rgba(212,135,10,0.10);
+
+  /* ── Status Colors ── */
+  --danger: #DC2626;
+  --danger-light: #FEE2E2;
+  --success: #16A34A;
+  --success-light: #DCFCE7;
+  --warning: #F59E0B;
+  --warning-light: #FEF3C7;
+
+  /* ── Backgrounds (warm cream tones) ── */
+  --bg: #FFF8F3;
+  --bg-card: #FFFFFF;
+  --bg-card-hover: #FFF3EB;
+  --bg-input: #FFF5EE;
+  --bg-lighter: #FFF0E5;
+
+  /* ── Text (warm dark brown, never pure black) ── */
+  --text: #3D2914;
+  --text-light: #8C7A6B;
+  --text-muted: #B8A99A;
+
+  /* ── Borders ── */
+  --border: #F0E0D0;
+  --border-strong: #DFC8B4;
+
+  /* ── Shadows (warm tint) ── */
+  --shadow-sm: 0 1px 3px rgba(139,69,19,0.06), 0 1px 2px rgba(139,69,19,0.04);
+  --shadow: 0 4px 12px rgba(139,69,19,0.08), 0 2px 4px rgba(139,69,19,0.04);
+  --shadow-lg: 0 8px 24px rgba(139,69,19,0.12);
+  --shadow-gold: 0 4px 14px rgba(212,135,10,0.25);
+  --shadow-purple: 0 4px 14px rgba(255,107,44,0.3);
+
+  /* ── Gradients ── */
+  --grad-primary: linear-gradient(135deg, #FF6B2C, #E55A1B);
+  --grad-gold: linear-gradient(135deg, #F0A830, #D4870A);
+  --grad-header: linear-gradient(135deg, #FF6B2C, #FF8548);
+  --grad-card: linear-gradient(135deg, #FFFFFF, #FFF8F3);
+}
+
+* {
+  margin: 0; padding: 0; box-sizing: border-box;
+  -webkit-tap-highlight-color: transparent;
+  user-select: none; -webkit-user-select: none;
+}
+
+html, body, #root {
+  height: 100%; overflow: hidden;
+  font-family: -apple-system, BlinkMacSystemFont, 'PingFang SC', 'Microsoft YaHei', 'Segoe UI', Roboto, sans-serif;
+  background: var(--bg);
+  color: var(--text);
+}
+
+button {
+  font-family: inherit; cursor: pointer; border: none; outline: none;
+  transition: all 0.15s ease;
+}
+button:active { transform: scale(0.97); }
+
+input, textarea {
+  font-family: inherit; outline: none; color: var(--text);
+  background: var(--bg-input);
+}
+input:focus, textarea:focus { border-color: var(--primary) !important; }
+input::placeholder, textarea::placeholder { color: var(--text-muted); }
+
+::-webkit-scrollbar { width: 8px; height: 8px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--border-strong); border-radius: 4px; }
+
+@keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+@keyframes slideUp { from { transform: translateY(100%); opacity: 0.7; } to { transform: translateY(0); opacity: 1; } }

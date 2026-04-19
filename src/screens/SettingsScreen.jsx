@@ -1,0 +1,242 @@
+// src/screens/SettingsScreen.jsx
+import React, { useState } from 'react'
+import { useApp } from '../context/AppContext'
+import PrinterService from '../services/PrinterService'
+import LicenseService from '../services/LicenseService'
+
+const DEV_PASSWORD = 'dev2024'
+
+export default function SettingsScreen({ onNavigate }) {
+  const { state, dispatch, t } = useApp()
+  const [devUnlocked, setDevUnlocked] = useState(false)
+  const [devPassword, setDevPassword] = useState('')
+  const [devError, setDevError] = useState('')
+  const [shopName, setShopName] = useState(state.shopName)
+  const [licenseKey, setLicenseKey] = useState('')
+  const [cookingPrices, setCookingPrices] = useState({ ...state.cookingMethodPrices })
+  const [tableCount, setTableCount] = useState(state.tableCount)
+
+  const langs = [
+    { id: 'zh', label: '中文', flag: '🇨🇳' },
+    { id: 'en', label: 'English', flag: '🇬🇧' },
+    { id: 'ms', label: 'Melayu', flag: '🇲🇾' },
+  ]
+
+  const methods = [
+    { id: 'dine_in', key: 'dineIn', icon: '🍽️' },
+    { id: 'takeaway', key: 'takeaway', icon: '📦' },
+    { id: 'extra', key: 'extraIngredient', icon: '➕' },
+    { id: 'extra_takeaway', key: 'extraTakeaway', icon: '📦➕' },
+  ]
+
+  const tryDevUnlock = () => {
+    if (devPassword === DEV_PASSWORD) { setDevUnlocked(true); setDevError('') }
+    else setDevError('密码错误 / Wrong password')
+  }
+
+  const activateLicense = () => {
+    const result = LicenseService.validateKey(licenseKey)
+    if (result.valid) {
+      dispatch({ type: 'SET_LICENSE', payload: { key: result.key, type: result.type, expiry: result.expiry } })
+      alert(`✅ ${t('success')} — 30 days`); setLicenseKey('')
+    } else alert(`❌ Invalid key`)
+  }
+
+  return (
+    <div style={S.container}>
+      <div style={S.header}>
+        <button style={S.backBtn} onClick={() => onNavigate('tables')}>← {t('back')}</button>
+        <div style={{ color: 'var(--gold)', fontSize: 16, fontWeight: 700 }}>⚙️ {t('settings')}</div>
+        <div style={{ width: 70 }} />
+      </div>
+
+      <div style={S.scroll}>
+        {/* License - everyone sees this */}
+        <Section title={t('license')} icon="🔑">
+          <div style={S.statusBox}>
+            <div style={{ color: 'var(--text)', fontSize: 15, fontWeight: 700 }}>
+              {state.licenseType === 'trial' ? `⏱️ ${t('trial')}` : `✅ ${t('monthly')}`}
+            </div>
+            <div style={{ color: 'var(--text-muted)', fontSize: 12, marginTop: 4 }}>
+              {t('expired')}: {state.licenseExpiry ? new Date(state.licenseExpiry).toLocaleDateString() : '-'}
+            </div>
+          </div>
+          <div style={S.inputRow}>
+            <input style={S.input} value={licenseKey}
+              onChange={e => setLicenseKey(e.target.value.toUpperCase())}
+              placeholder="POS-XXXX-XXXX-XXXX" />
+            <button style={S.goldBtn} onClick={activateLicense}>{t('activate')}</button>
+          </div>
+        </Section>
+
+        {/* Dev gate */}
+        {!devUnlocked ? (
+          <Section title="开发者设置 / Developer" icon="🔒">
+            <div style={{ color: 'var(--text-muted)', fontSize: 12, marginBottom: 12 }}>
+              需要开发者密码才能修改设置
+            </div>
+            <div style={S.inputRow}>
+              <input type="password" style={{
+                ...S.input, textAlign: 'center', letterSpacing: 4,
+                borderColor: devError ? 'var(--danger)' : 'var(--border)',
+              }}
+                value={devPassword}
+                onChange={e => { setDevPassword(e.target.value); setDevError('') }}
+                onKeyDown={e => e.key === 'Enter' && tryDevUnlock()}
+                placeholder="输入密码" />
+              <button style={S.goldBtn} onClick={tryDevUnlock}>🔓</button>
+            </div>
+            {devError && <div style={{ color: 'var(--danger)', fontSize: 13, marginTop: 8, fontWeight: 600 }}>{devError}</div>}
+          </Section>
+        ) : (
+          <>
+            <div style={S.unlockedBanner}>🔓 开发者模式已解锁</div>
+
+            <Section title={t('shopName')} icon="🏪">
+              <div style={S.inputRow}>
+                <input style={S.input} value={shopName} onChange={e => setShopName(e.target.value)} />
+                <button style={S.saveBtn} onClick={() => { dispatch({ type: 'SET_SHOP_NAME', payload: shopName }); alert('✅') }}>{t('save')}</button>
+              </div>
+            </Section>
+
+            <Section title={t('language')} icon="🌐">
+              <div style={{ display: 'flex', gap: 8 }}>
+                {langs.map(l => (
+                  <button key={l.id} onClick={() => dispatch({ type: 'SET_LANGUAGE', payload: l.id })} style={{
+                    ...S.langBtn,
+                    background: state.language === l.id ? 'var(--grad-primary)' : 'var(--bg-lighter)',
+                    color: state.language === l.id ? '#FFFFFF' : 'var(--text)',
+                    borderColor: state.language === l.id ? 'var(--primary)' : 'var(--border)',
+                  }}>
+                    <div style={{ fontSize: 22 }}>{l.flag}</div>
+                    <div style={{ fontSize: 13, fontWeight: 600, marginTop: 4 }}>{l.label}</div>
+                  </button>
+                ))}
+              </div>
+            </Section>
+
+            <Section title="菜单管理" icon="📋">
+              <button onClick={() => onNavigate('menuManager')} style={{
+                width: '100%', padding: 14, background: 'var(--grad-primary)',
+                color: '#FFFFFF', borderRadius: 12, fontSize: 15, fontWeight: 700,
+                boxShadow: 'var(--shadow-purple)',
+              }}>✏️ 编辑菜单 →</button>
+            </Section>
+
+            <Section title={t('tableNo')} icon="🪑">
+              <div style={S.inputRow}>
+                <input style={S.input} type="number" value={tableCount}
+                  onChange={e => setTableCount(e.target.value)} min={1} max={100} />
+                <button style={S.saveBtn} onClick={() => {
+                  const n = parseInt(tableCount)
+                  if (n > 0 && n <= 100) { dispatch({ type: 'SET_TABLE_COUNT', payload: n }); alert('✅') }
+                }}>{t('save')}</button>
+              </div>
+            </Section>
+
+            <Section title={`${t('price')} · ${t('dineIn')} / ${t('takeaway')}`} icon="💰">
+              {methods.map(m => (
+                <div key={m.id} style={S.priceRow}>
+                  <span style={{ fontSize: 18, marginRight: 8 }}>{m.icon}</span>
+                  <span style={{ flex: 1, color: 'var(--text)', fontSize: 14 }}>{t(m.key)}</span>
+                  <span style={{ color: 'var(--text-muted)', marginRight: 6 }}>RM +</span>
+                  <input style={S.priceInput} type="number" step="0.1"
+                    value={cookingPrices[m.id]}
+                    onChange={e => setCookingPrices({ ...cookingPrices, [m.id]: parseFloat(e.target.value) || 0 })} />
+                </div>
+              ))}
+              <button style={S.saveFullBtn} onClick={() => { dispatch({ type: 'SET_COOKING_PRICES', payload: cookingPrices }); alert('✅') }}>
+                {t('save')}
+              </button>
+            </Section>
+
+            <Section title={t('printer')} icon="🖨️">
+              <div style={S.statusBox}>
+                <span style={{ color: state.printerConnected ? 'var(--success)' : 'var(--danger)', fontSize: 14, fontWeight: 600 }}>
+                  {state.printerConnected ? `● ${t('connected')}` : `● ${t('disconnected')}`}
+                </span>
+              </div>
+              <div style={{ display: 'flex', gap: 8 }}>
+                <button style={S.flexBtn} onClick={async () => {
+                  try {
+                    const r = await PrinterService.scanAndConnect()
+                    dispatch({ type: 'SET_PRINTER', payload: { address: r.address, connected: true } })
+                    alert('✅ ' + r.name)
+                  } catch (e) { alert('❌ ' + e.message) }
+                }}>🔍 {t('connectPrinter')}</button>
+                {state.printerConnected && (
+                  <button style={{ ...S.flexBtn, background: 'var(--success)', color: '#FFF' }}
+                    onClick={async () => { try { await PrinterService.printTest(); alert('✅') } catch (e) { alert('❌ ' + e.message) } }}>
+                    {t('printTest')}</button>
+                )}
+              </div>
+            </Section>
+          </>
+        )}
+      </div>
+    </div>
+  )
+}
+
+function Section({ title, icon, children }) {
+  return (
+    <div style={S.section}>
+      <div style={S.sectionTitle}><span style={{ fontSize: 18, marginRight: 8 }}>{icon}</span>{title}</div>
+      {children}
+    </div>
+  )
+}
+
+const S = {
+  container: { display: 'flex', flexDirection: 'column', height: '100%', background: 'var(--bg)' },
+  header: {
+    display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+    padding: '12px 18px', background: 'var(--bg-card)', borderBottom: '1px solid var(--border)',
+  },
+  backBtn: {
+    background: 'var(--bg-lighter)', color: 'var(--text)', border: '1px solid var(--border)',
+    padding: '8px 14px', borderRadius: 10, fontSize: 14,
+  },
+  scroll: { flex: 1, overflow: 'auto', padding: 16 },
+  section: {
+    background: 'var(--bg-card)', borderRadius: 14, padding: 16, marginBottom: 12,
+    border: '1px solid var(--border)',
+  },
+  sectionTitle: { color: 'var(--text)', fontSize: 14, fontWeight: 700, marginBottom: 14, display: 'flex', alignItems: 'center' },
+  unlockedBanner: {
+    background: 'var(--primary-light)', border: '1px solid var(--primary)',
+    borderRadius: 10, padding: '10px 16px', marginBottom: 12,
+    color: 'var(--primary)', fontSize: 13, fontWeight: 600, textAlign: 'center',
+  },
+  inputRow: { display: 'flex', gap: 10 },
+  input: {
+    flex: 1, background: 'var(--bg-input)', border: '1px solid var(--border)',
+    borderRadius: 10, padding: '10px 14px', fontSize: 14, color: 'var(--text)',
+  },
+  saveBtn: {
+    background: 'var(--grad-primary)', color: '#FFFFFF',
+    padding: '10px 18px', borderRadius: 10, fontSize: 13, fontWeight: 700,
+  },
+  goldBtn: {
+    background: 'var(--grad-gold)', color: 'var(--text)',
+    padding: '10px 18px', borderRadius: 10, fontSize: 13, fontWeight: 800,
+    boxShadow: 'var(--shadow-gold)',
+  },
+  saveFullBtn: {
+    width: '100%', marginTop: 10, background: 'var(--grad-primary)',
+    color: '#FFFFFF', padding: 12, borderRadius: 10, fontSize: 14, fontWeight: 700,
+  },
+  langBtn: {
+    flex: 1, padding: '14px 10px', borderRadius: 12, border: '1.5px solid', textAlign: 'center',
+  },
+  priceRow: { display: 'flex', alignItems: 'center', marginBottom: 10, padding: '8px 0' },
+  priceInput: {
+    background: 'var(--bg-input)', border: '1px solid var(--border)',
+    borderRadius: 8, padding: '8px 10px', fontSize: 14, width: 80, textAlign: 'right', color: 'var(--text)',
+  },
+  statusBox: { background: 'var(--bg-lighter)', borderRadius: 10, padding: 12, marginBottom: 10 },
+  flexBtn: {
+    flex: 1, background: 'var(--bg-lighter)', border: '1px solid var(--border)',
+    color: 'var(--text)', padding: 12, borderRadius: 10, fontSize: 13, fontWeight: 600,
+  },
+}
