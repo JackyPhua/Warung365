@@ -24,12 +24,11 @@ export default function WorkerJoinScreen({ onNavigate }) {
     if (scanning) return
     const codeReader = new BrowserMultiFormatReader()
     codeReaderRef.current = codeReader
-    setScanning(true)
+    setScanning(true)  // This makes the <video> display:block
     setStatus('📷 Opening camera...')
     try {
-      // Ensure <video> is mounted before starting camera
-      await new Promise(r => requestAnimationFrame(() => r()))
-      await new Promise(r => requestAnimationFrame(() => r()))
+      // Wait for React to re-render and video element to become visible (display:block)
+      await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)))
       const result = await codeReader.decodeOnceFromVideoDevice(undefined, videoRef.current)
       const text = result?.getText?.() || ''
       setJsonText(text)
@@ -111,19 +110,16 @@ export default function WorkerJoinScreen({ onNavigate }) {
 
         <div style={S.section}>
           <div style={S.sectionTitle}>📷 {t('cameraScan')}</div>
-          <div style={S.videoBox}>
-            <video ref={videoRef} style={S.video} muted playsInline />
-            {!scanning && (
-              <div style={S.videoOverlay}>
-                <button
-                  style={{ ...S.primaryBtn, marginTop: 0, background: 'var(--grad-gold)', color: 'var(--primary-dark)', width: '100%' }}
-                  onClick={startScan}
-                >
-                  📷 {t('cameraHint')}
-                </button>
-              </div>
-            )}
-          </div>
+          {/* video is ALWAYS in DOM (for ref), but hidden when not scanning so it can't intercept touches */}
+          <video ref={videoRef} style={{ ...S.video, display: scanning ? 'block' : 'none' }} muted playsInline />
+          {!scanning && (
+            <button
+              style={{ ...S.primaryBtn, marginTop: 0, background: 'var(--grad-gold)', color: 'var(--primary-dark)' }}
+              onClick={startScan}
+            >
+              📷 {t('cameraHint')}
+            </button>
+          )}
           {status && <div style={{ marginTop: 10, color: 'var(--text)', fontSize: 12 }}>{status}</div>}
         </div>
 
@@ -177,18 +173,7 @@ const S = {
     WebkitUserSelect: 'text',
     userSelect: 'text',
   },
-  videoBox: { position: 'relative', width: '100%', aspectRatio: '16/10', background: '#000', borderRadius: 12, overflow: 'hidden', border: '1px solid var(--border)' },
-  video: { width: '100%', height: '100%', objectFit: 'cover', pointerEvents: 'none' },
-  videoOverlay: {
-    position: 'absolute',
-    inset: 0,
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    padding: 12,
-    background: 'rgba(0,0,0,0.35)',
-    pointerEvents: 'auto',
-  },
+  video: { width: '100%', borderRadius: 12, objectFit: 'cover', pointerEvents: 'none', border: '1px solid var(--border)' },
   textarea: { width: '100%', background: 'var(--bg-input)', border: '1px solid var(--border)', borderRadius: 12, padding: 12, fontSize: 13, color: 'var(--text)', boxSizing: 'border-box', resize: 'vertical', fontFamily: "'Courier New', Courier, monospace" },
   primaryBtn: { width: '100%', marginTop: 10, padding: 14, background: 'var(--grad-primary)', color: '#FFFFFF', borderRadius: 12, fontSize: 15, fontWeight: 800, boxShadow: 'var(--shadow-purple)' },
 }

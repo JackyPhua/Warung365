@@ -9,6 +9,8 @@ import DispatchService from '../services/DispatchService'
 export default function OrderScreen({ orderId, tableId, onNavigate }) {
   const { state, dispatch, t, getOrderTotal } = useApp()
   const isWaiter = state.deviceRole === 'waiter'
+  // Workers can checkout takeaway orders (tableId===0) but not dine-in tables
+  const canCheckout = !isWaiter || tableId === 0
   const [showCheckout, setShowCheckout] = useState(false)
   const [showReceipt, setShowReceipt] = useState(null) // { order, payment } or null
   const [editingNote, setEditingNote] = useState(null)
@@ -144,7 +146,7 @@ export default function OrderScreen({ orderId, tableId, onNavigate }) {
           <span style={{ color: 'var(--primary)', fontSize: 28, fontWeight: 800 }}>RM {total.toFixed(2)}</span>
         </div>
         <div style={{ display: 'flex', gap: 8 }}>
-          {!isWaiter && (
+          {canCheckout && (
             <button style={S.cancelBtn} onClick={() => {
               if (confirm(t('cancelOrder') + '?')) {
                 dispatch({ type: 'CANCEL_ORDER', payload: { orderId, tableId } }); SoundService.errorSound(); onNavigate('tables')
@@ -155,13 +157,13 @@ export default function OrderScreen({ orderId, tableId, onNavigate }) {
             if (!state.printerConnected) { alert(t('disconnected')); return }
             try { await PrinterService.printKitchenTicket({ shopName: state.shopName, tableId, order, t }); alert('✅') } catch (e) { alert('❌ ' + e.message) }
           }}>🖨️</button>
-          {isWaiter ? (
-            <div style={S.waiterHint}>🔒 {t('noCheckoutPermission')}</div>
-          ) : (
+          {canCheckout ? (
             <button style={{ ...S.checkoutBtn, opacity: order.items.length === 0 ? 0.3 : 1 }}
               onClick={() => { if (order.items.length > 0) setShowCheckout(true) }}>
               💳 {t('checkout')}
             </button>
+          ) : (
+            <div style={S.waiterHint}>🔒 {t('noCheckoutPermission')}</div>
           )}
         </div>
       </div>
