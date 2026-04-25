@@ -44,6 +44,7 @@ export default function SyncScreen({ onNavigate }) {
       const r = await DispatchService.startHost({
         shopName: state.shopName,
         storeId: state.storeId,
+        language: state.language,
         onWorkers: (list) =>
           dispatch({ type: 'SET_CONNECTED_CLIENTS', payload: list.map(w => `${w.name} (${w.remoteAddress})`) }),
       })

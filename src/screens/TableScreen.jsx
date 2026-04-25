@@ -227,12 +227,19 @@ export default function TableScreen({ onNavigate }) {
         </div>
       </div>
 
-      {/* Active takeaway orders panel */}
-      {activeTakeawayOrders.length > 0 && (
-        <div style={taStyles.panel}>
-          <div style={taStyles.header}>
-            <span>📦 {t('takeaway')} ({activeTakeawayOrders.length})</span>
+      {/* Active takeaway orders panel — always visible so workers can create takeaway */}
+      <div style={taStyles.panel}>
+        <div style={taStyles.header}>
+          <span>📦 {t('takeaway')} {activeTakeawayOrders.length > 0 ? `(${activeTakeawayOrders.length})` : ''}</span>
+          <button style={taStyles.newBtn} onClick={() => onNavigate('menu', { tableId: 0, orderType: 'takeaway' })}>
+            + {t('new') || '新增'}
+          </button>
+        </div>
+        {activeTakeawayOrders.length === 0 ? (
+          <div style={{ color: 'var(--text-light)', fontSize: 12, padding: '2px 0' }}>
+            — {t('noItems') || '暂无打包单'}
           </div>
+        ) : (
           <div style={taStyles.list}>
             {activeTakeawayOrders.map(o => {
               const allKdsReady = o.items.length > 0 && o.items.every(i => i.kdsStatus === 'ready')
@@ -248,24 +255,15 @@ export default function TableScreen({ onNavigate }) {
                       {o.items.length} {t('itemOf')} · RM {total.toFixed(2)}
                     </div>
                   </div>
-                  <button
-                    style={taStyles.viewBtn}
-                    onClick={() => onNavigate('order', { orderId: o.id, tableId: 0 })}
-                  >{t('view') || '查看'}</button>
+                  <button style={taStyles.viewBtn} onClick={() => onNavigate('order', { orderId: o.id, tableId: 0 })}>
+                    {t('view') || '查看'}
+                  </button>
                 </div>
               )
             })}
           </div>
-        </div>
-      )}
-
-      {/* FAB */}
-      <button style={{
-        ...styles.fab,
-        bottom: (readyToServeOrders.length > 0 || state.readyNotifications?.length > 0) ? 100 : 20,
-      }} onClick={() => onNavigate('menu', { tableId: 0, orderType: 'takeaway' })}>
-        📦 {t('takeaway')}
-      </button>
+        )}
+      </div>
 
       {/* Worker: direct push "food ready" notification banners */}
       {state.serverMode === 'sub' && state.readyNotifications?.length > 0 && (
@@ -551,7 +549,11 @@ const taStyles = {
   },
   header: {
     fontSize: 13, fontWeight: 700, color: '#D97706',
-    marginBottom: 6, display: 'flex', alignItems: 'center', gap: 6,
+    marginBottom: 6, display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+  },
+  newBtn: {
+    background: '#F59E0B', color: '#FFFFFF',
+    padding: '4px 12px', borderRadius: 8, fontSize: 12, fontWeight: 700,
   },
   list: { display: 'flex', flexDirection: 'column', gap: 6 },
   item: {

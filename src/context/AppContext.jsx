@@ -253,18 +253,25 @@ function reducer(state, action) {
     case 'SET_CONNECTED_CLIENTS':
       return { ...state, connectedClients: action.payload }
 
-    // Host receives worker orders → ADD new orders, keep host orders; merge table orderIds
+    // Host receives orders from worker → ADD new orders; derive table status from orders only
+    // (Worker no longer sends tables — prevents PAID ↔ EMPTY ping-pong during auto-clear)
     case 'MERGE_WORKER_ORDERS': {
-      const { orders: wOrders, tables: wTables } = action.payload
+      const { orders: wOrders } = action.payload
       const mergedOrders = { ...state.orders, ...wOrders }
+      // Rebuild table orderIds by scanning all merged orders
       const mergedTables = state.tables.map(hostTable => {
-        const wTable = (wTables || []).find(t => t.id === hostTable.id)
-        if (!wTable) return hostTable
-        const mergedIds = [...new Set([...hostTable.orderIds, ...wTable.orderIds])]
-          .filter(id => mergedOrders[id])
-        if (mergedIds.length === 0) return hostTable
-        const newStatus = wTable.status !== TABLE_STATUS.EMPTY ? wTable.status : hostTable.status
-        return { ...hostTable, orderIds: mergedIds, status: newStatus }
+        const allIds = [...new Set([
+          ...hostTable.orderIds,
+          ...Object.values(wOrders)
+            .filter(o => o.tableId === hostTable.id)
+            .map(o => o.id),
+        ])].filter(id => mergedOrders[id])
+        if (allIds.length === 0) return hostTable  // No change — keep host's PAID/EMPTY status
+        const hasTA = allIds.some(id => mergedOrders[id]?.type === 'takeaway')
+        return {
+          ...hostTable, orderIds: allIds,
+          status: hasTA && allIds.length === 1 ? TABLE_STATUS.TAKEAWAY : TABLE_STATUS.OCCUPIED,
+        }
       })
       return { ...state, orders: mergedOrders, tables: mergedTables }
     }
@@ -390,7 +397,7 @@ export function AppProvider({ children }) {
     }
   }, [isWorker])
 
-  // LAN sync: worker sends orders+tables to host when they change
+  // LAN sync: worker sends orders to host when they change (no tables — prevents PAID ping-pong)
   useEffect(() => {
     if (!DispatchService.isNative) return
     if (!isWorker) return
@@ -398,18 +405,17 @@ export function AppProvider({ children }) {
     if (syncFromNetwork.current) return
     const id = setTimeout(() => {
       if (syncFromNetwork.current) return
-      DispatchService.sendOrdersToHost(state.orders, state.tables).catch(() => {})
+      DispatchService.sendOrdersToHost(state.orders).catch(() => {})
     }, 300)
     return () => clearTimeout(id)
-  }, [state.orders, state.tables, isWorker])
+  }, [state.orders, isWorker])
 
-  // LAN sync: host receives orders/tables from worker → MERGE (add new orders, don't replace)
+  // LAN sync: host receives orders from worker → MERGE (add new, don't replace)
   useEffect(() => {
     if (!DispatchService.isNative) return
     if (isWorker) return
-    const handler = (orders, tables) => {
-      dispatch({ type: 'MERGE_WORKER_ORDERS', payload: { orders, tables } })
-      // No syncFromNetwork flag here — host should always re-broadcast after merging
+    const handler = (orders) => {
+      dispatch({ type: 'MERGE_WORKER_ORDERS', payload: { orders } })
     }
     DispatchService.onWorkerOrders = handler
     return () => {

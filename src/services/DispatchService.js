@@ -34,11 +34,12 @@ class DispatchService {
     return WifiDirectService.isSupported
   }
 
-  getJoinPayload({ shopName, storeId } = {}) {
+  getJoinPayload({ shopName, storeId, language } = {}) {
     return {
       t: 'WORKER_JOIN',
       shopName: shopName || '',
       storeId: storeId || '',
+      language: language || 'zh',
       port: this.port,
       hostDeviceAddress: this._hostDeviceAddress || undefined,
       hostIp: this._hostIp || undefined,
@@ -46,7 +47,7 @@ class DispatchService {
     }
   }
 
-  async startHost({ shopName, storeId, onWorkers } = {}) {
+  async startHost({ shopName, storeId, language, onWorkers } = {}) {
     await this.stop()
     this.mode = 'host'
     this.onWorkers = onWorkers || null
@@ -66,7 +67,7 @@ class DispatchService {
     this._hostDeviceAddress = null
 
     this._wire()
-    return { ok: true, join: this.getJoinPayload({ shopName, storeId }), hostIp: this._hostIp }
+    return { ok: true, join: this.getJoinPayload({ shopName, storeId, language }), hostIp: this._hostIp }
   }
 
   async connectWorker({ joinPayload, name, onJob } = {}) {
@@ -136,11 +137,11 @@ class DispatchService {
     await WifiDirectService.sendJson({ t: 'STATE', state })
   }
 
-  // Worker: send orders+tables snapshot back to host
-  async sendOrdersToHost(orders, tables) {
+  // Worker: send orders snapshot back to host (no tables — host derives table status from orders)
+  async sendOrdersToHost(orders) {
     if (this.mode !== 'worker') return
     if (!this.isNative) return
-    await WifiDirectService.sendJson({ t: 'WORKER_ORDERS', orders, tables })
+    await WifiDirectService.sendJson({ t: 'WORKER_ORDERS', orders })
   }
 
   // Host: push a "food ready" notification directly to all workers (immediate, no state sync delay)
@@ -214,9 +215,9 @@ class DispatchService {
       return
     }
 
-    // Worker pushed its orders/tables back to host
-    if (msg.t === 'WORKER_ORDERS' && msg.orders && msg.tables) {
-      if (this.onWorkerOrders) this.onWorkerOrders(msg.orders, msg.tables)
+    // Worker pushed its orders back to host
+    if (msg.t === 'WORKER_ORDERS' && msg.orders) {
+      if (this.onWorkerOrders) this.onWorkerOrders(msg.orders)
       return
     }
   }

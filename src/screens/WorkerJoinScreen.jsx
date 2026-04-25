@@ -69,6 +69,8 @@ export default function WorkerJoinScreen({ onNavigate }) {
         name: workerName.trim() || undefined,
         onJob: (job) => onNavigate('workerJobs', { job }),
       })
+      // Adopt host's language so UI matches
+      if (joinPayload.language) dispatch({ type: 'SET_LANGUAGE', payload: joinPayload.language })
       // Mark this device as worker so AppContext sync effects activate
       dispatch({ type: 'SET_SERVER_MODE', payload: 'sub' })
       setStatus('✅ Connected!')
