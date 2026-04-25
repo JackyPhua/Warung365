@@ -3,6 +3,7 @@ import React, { useState, useEffect, useMemo, useRef } from 'react'
 import { useApp } from '../context/AppContext'
 import { DEPARTMENTS, getLocalizedName } from '../data/menuData'
 import SoundService from '../services/SoundService'
+import DispatchService from '../services/DispatchService'
 
 export default function KitchenDisplayScreen({ department: initialDept, onNavigate }) {
   const { state, dispatch, t } = useApp()
@@ -87,6 +88,12 @@ export default function KitchenDisplayScreen({ department: initialDept, onNaviga
     if (itemIds.length === 0) return
     dispatch({ type: 'UPDATE_ITEMS_KDS_STATUS', payload: { orderId, itemIds, status: 'ready' } })
     SoundService.paymentSound()
+    // Push an immediate "ready" notification to all connected workers
+    const order = state.orders[orderId]
+    if (order) {
+      const itemSummary = items.map(i => i.name.split(' [')[0]).join(', ')
+      DispatchService.notifyReady({ orderId, tableId: order.tableId, itemSummary }).catch(() => {})
+    }
   }
 
   const undoItem = (orderId, itemId) => {

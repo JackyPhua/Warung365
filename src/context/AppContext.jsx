@@ -4,6 +4,7 @@ import { v4 as uuidv4 } from 'uuid'
 import { translations } from '../i18n/translations'
 import { getDefaultMenu } from '../data/menuData'
 import DispatchService from '../services/DispatchService'
+import SoundService from '../services/SoundService'
 
 const AppContext = createContext(null)
 
@@ -37,6 +38,7 @@ const initialState = {
   hostIp: null,
   joinJson: null,
   connectedClients: [],
+  readyNotifications: [],
   licenseKey: null,
   licenseType: null,
   licenseExpiry: null,
@@ -251,6 +253,49 @@ function reducer(state, action) {
     case 'SET_CONNECTED_CLIENTS':
       return { ...state, connectedClients: action.payload }
 
+    // Host receives worker orders → ADD new orders, keep host orders; merge table orderIds
+    case 'MERGE_WORKER_ORDERS': {
+      const { orders: wOrders, tables: wTables } = action.payload
+      const mergedOrders = { ...state.orders, ...wOrders }
+      const mergedTables = state.tables.map(hostTable => {
+        const wTable = (wTables || []).find(t => t.id === hostTable.id)
+        if (!wTable) return hostTable
+        const mergedIds = [...new Set([...hostTable.orderIds, ...wTable.orderIds])]
+          .filter(id => mergedOrders[id])
+        if (mergedIds.length === 0) return hostTable
+        const newStatus = wTable.status !== TABLE_STATUS.EMPTY ? wTable.status : hostTable.status
+        return { ...hostTable, orderIds: mergedIds, status: newStatus }
+      })
+      return { ...state, orders: mergedOrders, tables: mergedTables }
+    }
+
+    // Worker receives host state → apply host state BUT keep local-only orders not yet on host.
+    // Orders that appear in host's completedOrders have been checked out → remove them.
+    case 'MERGE_HOST_STATE': {
+      const hostState = action.payload
+      const checkedOutIds = new Set((hostState.completedOrders || []).map(o => o.id))
+      const mergedOrders = { ...(hostState.orders || {}) }
+      // Keep local orders that host hasn't received yet AND haven't been checked out
+      for (const [id, order] of Object.entries(state.orders)) {
+        if (!mergedOrders[id] && !checkedOutIds.has(id)) mergedOrders[id] = order
+      }
+      const mergedTables = (hostState.tables || state.tables).map(hostTable => {
+        const localTable = state.tables.find(t => t.id === hostTable.id)
+        if (!localTable) return hostTable
+        const localOnly = localTable.orderIds.filter(
+          id => !hostTable.orderIds.includes(id) && mergedOrders[id]
+        )
+        if (localOnly.length === 0) return hostTable
+        return { ...hostTable, orderIds: [...hostTable.orderIds, ...localOnly], status: TABLE_STATUS.OCCUPIED }
+      })
+      return { ...state, ...hostState, orders: mergedOrders, tables: mergedTables }
+    }
+
+    case 'ADD_READY_NOTIFY':
+      return { ...state, readyNotifications: [...(state.readyNotifications || []), action.payload] }
+    case 'DISMISS_READY_NOTIFY':
+      return { ...state, readyNotifications: (state.readyNotifications || []).filter((_, i) => i !== action.payload) }
+
     case 'SET_LICENSE':
       return {
         ...state,
@@ -288,11 +333,12 @@ export function AppProvider({ children }) {
             return t
           })
         }
-        // Runtime-only fields — never restore from disk (server doesn't survive restart)
+        // Runtime-only fields — never restore from disk
         delete parsed.hostRunning
         delete parsed.hostIp
         delete parsed.joinJson
         delete parsed.connectedClients
+        delete parsed.readyNotifications
         dispatch({ type: 'LOAD_STATE', payload: parsed })
         if (!parsed.menu || parsed.menu.length === 0) {
           dispatch({ type: 'SET_MENU', payload: getDefaultMenu() })
@@ -313,19 +359,34 @@ export function AppProvider({ children }) {
     try { localStorage.setItem(STORAGE_KEY, JSON.stringify(state)) } catch (e) {}
   }, [state])
 
-  // LAN sync: worker receives state from host
+  // LAN sync: worker receives state from host → MERGE (preserve local-only orders)
   useEffect(() => {
     if (!DispatchService.isNative) return
     if (!isWorker) return
     const handler = (nextState) => {
       if (!nextState || typeof nextState !== 'object') return
       syncFromNetwork.current = true
-      dispatch({ type: 'LOAD_STATE', payload: nextState })
+      dispatch({ type: 'MERGE_HOST_STATE', payload: nextState })
       setTimeout(() => { syncFromNetwork.current = false }, 500)
     }
     DispatchService.onState = handler
     return () => {
       if (DispatchService.onState === handler) DispatchService.onState = null
+    }
+  }, [isWorker])
+
+  // LAN sync: worker receives direct "food ready" push from host → play sound immediately
+  useEffect(() => {
+    if (!DispatchService.isNative) return
+    if (!isWorker) return
+    const handler = ({ tableId, itemSummary } = {}) => {
+      SoundService.notifySound()
+      // Persist the notification so TableScreen can show the banner
+      dispatch({ type: 'ADD_READY_NOTIFY', payload: { tableId, itemSummary, at: Date.now() } })
+    }
+    DispatchService.onReadyNotify = handler
+    return () => {
+      if (DispatchService.onReadyNotify === handler) DispatchService.onReadyNotify = null
     }
   }, [isWorker])
 
@@ -342,14 +403,13 @@ export function AppProvider({ children }) {
     return () => clearTimeout(id)
   }, [state.orders, state.tables, isWorker])
 
-  // LAN sync: host receives orders/tables from worker → merge → re-broadcast
+  // LAN sync: host receives orders/tables from worker → MERGE (add new orders, don't replace)
   useEffect(() => {
     if (!DispatchService.isNative) return
     if (isWorker) return
     const handler = (orders, tables) => {
-      syncFromNetwork.current = true
-      dispatch({ type: 'LOAD_STATE', payload: { orders, tables } })
-      setTimeout(() => { syncFromNetwork.current = false }, 500)
+      dispatch({ type: 'MERGE_WORKER_ORDERS', payload: { orders, tables } })
+      // No syncFromNetwork flag here — host should always re-broadcast after merging
     }
     DispatchService.onWorkerOrders = handler
     return () => {
@@ -359,18 +419,27 @@ export function AppProvider({ children }) {
 
   // LAN sync: host broadcasts state to workers when it changes (debounced).
   // Strip host-only / device-specific fields so workers don't overwrite their own role/mode.
+  // No syncFromNetwork guard here — host must always broadcast after any state change
+  // (including after merging worker orders). Loop prevention is on the worker side only.
   useEffect(() => {
     if (!DispatchService.isNative) return
     if (isWorker) return
     if (DispatchService.mode !== 'host') return
-    if (syncFromNetwork.current) return
     const id = setTimeout(() => {
-      if (syncFromNetwork.current) return
       const { serverMode, hostRunning, hostIp, joinJson, connectedClients, deviceRole, ...sharedState } = state
       DispatchService.broadcastState(sharedState).catch(() => {})
     }, 200)
     return () => clearTimeout(id)
   }, [state, isWorker])
+
+  // Auto-clear readyNotifications after 30 s
+  useEffect(() => {
+    if (!state.readyNotifications?.length) return
+    const timer = setTimeout(() => {
+      dispatch({ type: 'LOAD_STATE', payload: { readyNotifications: [] } })
+    }, 30000)
+    return () => clearTimeout(timer)
+  }, [state.readyNotifications])
 
   // Cross-tab sync: when another tab updates localStorage, reload state
   useEffect(() => {

@@ -22,6 +22,7 @@ class DispatchService {
     this.onJob = null
     this.onState = null
     this.onWorkerOrders = null
+    this.onReadyNotify = null
     this._unsubs = []
     this._workerId = null
     this._workerName = null
@@ -142,6 +143,13 @@ class DispatchService {
     await WifiDirectService.sendJson({ t: 'WORKER_ORDERS', orders, tables })
   }
 
+  // Host: push a "food ready" notification directly to all workers (immediate, no state sync delay)
+  async notifyReady({ orderId, tableId, itemSummary } = {}) {
+    if (this.mode !== 'host') return
+    if (!this.isNative) return
+    await WifiDirectService.sendJson({ t: 'NOTIFY_READY', orderId, tableId, itemSummary })
+  }
+
   // Worker: accept/done (optional for now)
   async acceptJob(jobId) {
     if (this.mode !== 'worker') return
@@ -225,6 +233,10 @@ class DispatchService {
     }
     if (msg.t === 'STATE' && msg.state) {
       if (this.onState) this.onState(msg.state)
+      return
+    }
+    if (msg.t === 'NOTIFY_READY') {
+      if (this.onReadyNotify) this.onReadyNotify({ orderId: msg.orderId, tableId: msg.tableId, itemSummary: msg.itemSummary })
       return
     }
   }

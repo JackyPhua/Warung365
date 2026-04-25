@@ -103,6 +103,27 @@ export default function TableScreen({ onNavigate }) {
     return ids
   }, [readyToServeOrders])
 
+  // Active takeaway orders (tableId===0, not yet checked out)
+  const activeTakeawayOrders = useMemo(() =>
+    Object.values(state.orders).filter(o => o.tableId === 0 && o.items.length > 0),
+    [state.orders]
+  )
+
+  // Tables where ALL active orders have ALL items served (delivered, awaiting payment)
+  const servedTableIds = useMemo(() => {
+    const ids = new Set()
+    state.tables.forEach(table => {
+      if (table.orderIds.length === 0) return
+      const orders = table.orderIds.map(id => state.orders[id]).filter(Boolean)
+      if (orders.length === 0) return
+      const allServed = orders.every(o =>
+        o.items.length > 0 && o.items.every(i => i.kdsStatus === 'served')
+      )
+      if (allServed) ids.add(table.id)
+    })
+    return ids
+  }, [state.tables, state.orders])
+
   // Sound alert when new ready-to-serve orders appear
   useEffect(() => {
     const count = readyToServeOrders.length
@@ -166,6 +187,7 @@ export default function TableScreen({ onNavigate }) {
       <div style={styles.legend}>
         <LegendItem color="var(--bg-card)" borderColor="var(--border)" label={t('emptyTable')} />
         <LegendItem color="#EF4444" label={t('occupied')} />
+        <LegendItem color="#EAB308" label={t('served') || '已送餐'} />
         <LegendItem color="#22C55E" label={t('paid')} />
         <LegendItem color="#F59E0B" label={t('packaged')} />
       </div>
@@ -174,7 +196,10 @@ export default function TableScreen({ onNavigate }) {
       <div style={styles.gridScroll}>
         <div style={{ ...styles.grid, gridTemplateColumns: compact ? 'repeat(auto-fill, minmax(90px, 1fr))' : 'repeat(auto-fill, minmax(110px, 1fr))', gap: compact ? 8 : 12 }}>
           {state.tables.map(table => {
-            const st = TABLE_STYLES[table.status]
+            const isServed = servedTableIds.has(table.id)
+            const st = isServed
+              ? { bg: 'linear-gradient(135deg, #EAB308, #CA8A04)', border: '#EAB308', numColor: '#FFFFFF', labelColor: '#FEF9C3' }
+              : TABLE_STYLES[table.status]
             const orderCount = table.orderIds.length
             return (
               <button key={table.id}
@@ -182,7 +207,9 @@ export default function TableScreen({ onNavigate }) {
                 onContextMenu={e => { e.preventDefault(); handleTableLongPress(table) }}
                 style={{ ...styles.tableCell, background: st.bg, borderColor: st.border }}>
                 <div style={{ fontSize: 30, fontWeight: 800, color: st.numColor }}>{table.id}</div>
-                <div style={{ fontSize: 11, fontWeight: 600, color: st.labelColor, marginTop: 4 }}>{getLabel(table)}</div>
+                <div style={{ fontSize: 11, fontWeight: 600, color: st.labelColor, marginTop: 4 }}>
+                  {isServed ? `🍽️ ${t('served') || '已送餐'}` : getLabel(table)}
+                </div>
                 {orderCount > 0 && (
                   <div style={styles.itemBadge}>
                     {orderCount > 1
@@ -191,7 +218,7 @@ export default function TableScreen({ onNavigate }) {
                     }
                   </div>
                 )}
-                {readyTableIds.has(table.id) && (
+                {readyTableIds.has(table.id) && !isServed && (
                   <div style={styles.readyBadge}>✅</div>
                 )}
               </button>
@@ -200,16 +227,77 @@ export default function TableScreen({ onNavigate }) {
         </div>
       </div>
 
+      {/* Active takeaway orders panel */}
+      {activeTakeawayOrders.length > 0 && (
+        <div style={taStyles.panel}>
+          <div style={taStyles.header}>
+            <span>📦 {t('takeaway')} ({activeTakeawayOrders.length})</span>
+          </div>
+          <div style={taStyles.list}>
+            {activeTakeawayOrders.map(o => {
+              const allKdsReady = o.items.length > 0 && o.items.every(i => i.kdsStatus === 'ready')
+              const total = o.items.reduce((s, i) => s + i.price * i.qty, 0)
+              return (
+                <div key={o.id} style={taStyles.item}>
+                  <div>
+                    <div style={{ fontWeight: 700, fontSize: 13, color: 'var(--text)' }}>
+                      #{o.id.slice(0, 6).toUpperCase()}
+                      {allKdsReady && <span style={{ color: '#16A34A', marginLeft: 6 }}>✅ {t('readyToServe')}</span>}
+                    </div>
+                    <div style={{ fontSize: 11, color: 'var(--text-light)', marginTop: 2 }}>
+                      {o.items.length} {t('itemOf')} · RM {total.toFixed(2)}
+                    </div>
+                  </div>
+                  <button
+                    style={taStyles.viewBtn}
+                    onClick={() => onNavigate('order', { orderId: o.id, tableId: 0 })}
+                  >{t('view') || '查看'}</button>
+                </div>
+              )
+            })}
+          </div>
+        </div>
+      )}
+
       {/* FAB */}
       <button style={{
         ...styles.fab,
-        bottom: readyToServeOrders.length > 0 ? 100 : 20,
+        bottom: (readyToServeOrders.length > 0 || state.readyNotifications?.length > 0) ? 100 : 20,
       }} onClick={() => onNavigate('menu', { tableId: 0, orderType: 'takeaway' })}>
         📦 {t('takeaway')}
       </button>
 
-      {/* Ready to Serve notification panel */}
-      {readyToServeOrders.length > 0 && (
+      {/* Worker: direct push "food ready" notification banners */}
+      {state.serverMode === 'sub' && state.readyNotifications?.length > 0 && (
+        <div style={notifyStyles.panel}>
+          <div style={notifyStyles.header}>
+            <span style={notifyStyles.headerIcon}>🔔</span>
+            <span style={notifyStyles.headerText}>{t('readyToServe')}</span>
+            <button
+              onClick={() => dispatch({ type: 'LOAD_STATE', payload: { readyNotifications: [] } })}
+              style={{ marginLeft: 'auto', background: 'none', color: '#fff', fontSize: 18, padding: '0 4px' }}
+            >✕</button>
+          </div>
+          <div style={notifyStyles.list}>
+            {state.readyNotifications.map((n, i) => (
+              <div key={i} style={notifyStyles.item}>
+                <div style={notifyStyles.itemInfo}>
+                  <div style={notifyStyles.itemTable}>
+                    {n.tableId === 0 ? `📦 ${t('takeaway')}` : `🪑 ${t('tableNo')} ${n.tableId}`}
+                  </div>
+                  <div style={notifyStyles.itemSummary}>
+                    {n.itemSummary && n.itemSummary.length > 40 ? n.itemSummary.slice(0, 40) + '...' : n.itemSummary}
+                  </div>
+                </div>
+                <span style={{ fontSize: 24 }}>✅</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Host: Ready to Serve notification panel (computed from local orders) */}
+      {state.serverMode !== 'sub' && readyToServeOrders.length > 0 && (
         <div style={notifyStyles.panel}>
           <div style={notifyStyles.header}>
             <span style={notifyStyles.headerIcon}>🔔</span>
@@ -453,5 +541,27 @@ const styles = {
     background: 'var(--grad-primary)', color: '#FFFFFF',
     borderRadius: 28, padding: '14px 24px', fontSize: 15, fontWeight: 800,
     boxShadow: '0 6px 20px rgba(255,107,44,0.4)',
+  },
+}
+
+const taStyles = {
+  panel: {
+    background: 'var(--bg-card)', borderTop: '3px solid #F59E0B',
+    padding: '8px 12px', borderRadius: 0,
+  },
+  header: {
+    fontSize: 13, fontWeight: 700, color: '#D97706',
+    marginBottom: 6, display: 'flex', alignItems: 'center', gap: 6,
+  },
+  list: { display: 'flex', flexDirection: 'column', gap: 6 },
+  item: {
+    display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+    background: '#FFFBEB', border: '1px solid #FDE68A', borderRadius: 10,
+    padding: '8px 12px', gap: 10,
+  },
+  viewBtn: {
+    background: 'var(--grad-gold)', color: 'var(--primary-dark)',
+    padding: '6px 14px', borderRadius: 8, fontSize: 12, fontWeight: 700,
+    flexShrink: 0,
   },
 }
