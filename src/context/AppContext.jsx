@@ -1,8 +1,9 @@
 // src/context/AppContext.jsx
-import React, { createContext, useContext, useReducer, useEffect, useCallback } from 'react'
+import React, { createContext, useContext, useReducer, useEffect, useCallback, useRef } from 'react'
 import { v4 as uuidv4 } from 'uuid'
 import { translations } from '../i18n/translations'
 import { getDefaultMenu } from '../data/menuData'
+import DispatchService from '../services/DispatchService'
 
 const AppContext = createContext(null)
 
@@ -32,6 +33,9 @@ const initialState = {
   printerConnected: false,
   serverMode: 'main',
   serverIp: null,
+  hostRunning: false,
+  hostIp: null,
+  joinJson: null,
   connectedClients: [],
   licenseKey: null,
   licenseType: null,
@@ -238,6 +242,12 @@ function reducer(state, action) {
       return { ...state, serverMode: action.payload }
     case 'SET_SERVER_IP':
       return { ...state, serverIp: action.payload }
+    case 'SET_HOST_RUNNING':
+      return { ...state, hostRunning: action.payload }
+    case 'SET_HOST_IP':
+      return { ...state, hostIp: action.payload }
+    case 'SET_JOIN_JSON':
+      return { ...state, joinJson: action.payload }
     case 'SET_CONNECTED_CLIENTS':
       return { ...state, connectedClients: action.payload }
 
@@ -259,6 +269,9 @@ const STORAGE_KEY = 'pos_state_v3'
 
 export function AppProvider({ children }) {
   const [state, dispatch] = useReducer(reducer, initialState)
+  const isWorker = state.serverMode === 'sub'
+  // Prevent sync loops: when state change is from network, skip re-sending
+  const syncFromNetwork = useRef(false)
 
   useEffect(() => {
     try {
@@ -275,6 +288,11 @@ export function AppProvider({ children }) {
             return t
           })
         }
+        // Runtime-only fields — never restore from disk (server doesn't survive restart)
+        delete parsed.hostRunning
+        delete parsed.hostIp
+        delete parsed.joinJson
+        delete parsed.connectedClients
         dispatch({ type: 'LOAD_STATE', payload: parsed })
         if (!parsed.menu || parsed.menu.length === 0) {
           dispatch({ type: 'SET_MENU', payload: getDefaultMenu() })
@@ -294,6 +312,65 @@ export function AppProvider({ children }) {
   useEffect(() => {
     try { localStorage.setItem(STORAGE_KEY, JSON.stringify(state)) } catch (e) {}
   }, [state])
+
+  // LAN sync: worker receives state from host
+  useEffect(() => {
+    if (!DispatchService.isNative) return
+    if (!isWorker) return
+    const handler = (nextState) => {
+      if (!nextState || typeof nextState !== 'object') return
+      syncFromNetwork.current = true
+      dispatch({ type: 'LOAD_STATE', payload: nextState })
+      setTimeout(() => { syncFromNetwork.current = false }, 500)
+    }
+    DispatchService.onState = handler
+    return () => {
+      if (DispatchService.onState === handler) DispatchService.onState = null
+    }
+  }, [isWorker])
+
+  // LAN sync: worker sends orders+tables to host when they change
+  useEffect(() => {
+    if (!DispatchService.isNative) return
+    if (!isWorker) return
+    if (DispatchService.mode !== 'worker') return
+    if (syncFromNetwork.current) return
+    const id = setTimeout(() => {
+      if (syncFromNetwork.current) return
+      DispatchService.sendOrdersToHost(state.orders, state.tables).catch(() => {})
+    }, 300)
+    return () => clearTimeout(id)
+  }, [state.orders, state.tables, isWorker])
+
+  // LAN sync: host receives orders/tables from worker → merge → re-broadcast
+  useEffect(() => {
+    if (!DispatchService.isNative) return
+    if (isWorker) return
+    const handler = (orders, tables) => {
+      syncFromNetwork.current = true
+      dispatch({ type: 'LOAD_STATE', payload: { orders, tables } })
+      setTimeout(() => { syncFromNetwork.current = false }, 500)
+    }
+    DispatchService.onWorkerOrders = handler
+    return () => {
+      if (DispatchService.onWorkerOrders === handler) DispatchService.onWorkerOrders = null
+    }
+  }, [isWorker])
+
+  // LAN sync: host broadcasts state to workers when it changes (debounced).
+  // Strip host-only / device-specific fields so workers don't overwrite their own role/mode.
+  useEffect(() => {
+    if (!DispatchService.isNative) return
+    if (isWorker) return
+    if (DispatchService.mode !== 'host') return
+    if (syncFromNetwork.current) return
+    const id = setTimeout(() => {
+      if (syncFromNetwork.current) return
+      const { serverMode, hostRunning, hostIp, joinJson, connectedClients, deviceRole, ...sharedState } = state
+      DispatchService.broadcastState(sharedState).catch(() => {})
+    }, 200)
+    return () => clearTimeout(id)
+  }, [state, isWorker])
 
   // Cross-tab sync: when another tab updates localStorage, reload state
   useEffect(() => {

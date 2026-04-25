@@ -34,7 +34,7 @@ export default function SettingsScreen({ onNavigate }) {
 
   const tryDevUnlock = () => {
     if (devPassword === DEV_PASSWORD) { setDevUnlocked(true); setDevError('') }
-    else setDevError('密码错误 / Wrong password')
+    else setDevError(t('wrongPassword'))
   }
 
   const activateLicense = () => {
@@ -132,9 +132,9 @@ export default function SettingsScreen({ onNavigate }) {
 
         {/* Dev gate */}
         {!devUnlocked ? (
-          <Section title="开发者设置 / Developer" icon="🔒">
+          <Section title={t('devSettings')} icon="🔒">
             <div style={{ color: 'var(--text-muted)', fontSize: 12, marginBottom: 12 }}>
-              需要开发者密码才能修改设置
+              {t('devPasswordHint')}
             </div>
             <div style={S.inputRow}>
               <input type="password" style={{
@@ -144,14 +144,14 @@ export default function SettingsScreen({ onNavigate }) {
                 value={devPassword}
                 onChange={e => { setDevPassword(e.target.value); setDevError('') }}
                 onKeyDown={e => e.key === 'Enter' && tryDevUnlock()}
-                placeholder="输入密码" />
+                placeholder={t('enterPassword')} />
               <button style={S.goldBtn} onClick={tryDevUnlock}>🔓</button>
             </div>
             {devError && <div style={{ color: 'var(--danger)', fontSize: 13, marginTop: 8, fontWeight: 600 }}>{devError}</div>}
           </Section>
         ) : (
           <>
-            <div style={S.unlockedBanner}>🔓 开发者模式已解锁</div>
+            <div style={S.unlockedBanner}>🔓 {t('devUnlocked')}</div>
 
             <Section title={t('shopName')} icon="🏪">
               <div style={S.inputRow}>
@@ -189,12 +189,12 @@ export default function SettingsScreen({ onNavigate }) {
               </div>
             </Section>
 
-            <Section title="菜单管理" icon="📋">
+            <Section title={t('menuManage')} icon="📋">
               <button onClick={() => onNavigate('menuManager')} style={{
                 width: '100%', padding: 14, background: 'var(--grad-primary)',
                 color: '#FFFFFF', borderRadius: 12, fontSize: 15, fontWeight: 700,
                 boxShadow: 'var(--shadow-purple)',
-              }}>✏️ 编辑菜单 →</button>
+              }}>✏️ {t('editMenu')} →</button>
             </Section>
 
             <Section title={t('tableNo')} icon="🪑">

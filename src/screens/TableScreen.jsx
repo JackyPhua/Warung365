@@ -14,6 +14,13 @@ export default function TableScreen({ onNavigate }) {
   const { state, dispatch, t, isLicenseValid, getLicenseDaysLeft, getTableOrders, getTableTotal } = useApp()
   const [showOrderPicker, setShowOrderPicker] = useState(null)
   const prevReadyCountRef = useRef(0)
+  const [winW, setWinW] = useState(window.innerWidth)
+  useEffect(() => {
+    const h = () => setWinW(window.innerWidth)
+    window.addEventListener('resize', h)
+    return () => window.removeEventListener('resize', h)
+  }, [])
+  const compact = winW < 600
 
   const handleTableClick = (table) => {
     if (!isLicenseValid()) { alert(t('license') + ' ' + t('expired')); return }
@@ -119,41 +126,40 @@ export default function TableScreen({ onNavigate }) {
   return (
     <div style={styles.container}>
       {/* Header */}
-      <div style={styles.header}>
+      <div style={{ ...styles.header, flexWrap: 'wrap', padding: compact ? '10px 12px' : '14px 20px' }}>
         <div style={styles.brand}>
-          <div style={styles.brandIcon}>🍱</div>
+          <div style={{ ...styles.brandIcon, width: compact ? 36 : 44, height: compact ? 36 : 44, fontSize: compact ? 20 : 24 }}>🍱</div>
           <div>
-            <div style={styles.shopName}>
+            <div style={{ ...styles.shopName, fontSize: compact ? 18 : 22 }}>
               <span style={{ color: '#FFFFFF' }}>Warung</span>
               <span style={{ color: '#FFF3C7', fontWeight: 900 }}>365</span>
             </div>
-            <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.7)', marginTop: 1 }}>
-              {state.shopName !== 'Warung365' ? state.shopName : ''}
-            </div>
+            {state.shopName !== 'Warung365' && (
+              <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.7)', marginTop: 1 }}>{state.shopName}</div>
+            )}
           </div>
         </div>
-        <div style={styles.headerRight}>
+        <div style={{ display: 'flex', gap: compact ? 4 : 8, alignItems: 'center', flexWrap: 'wrap', justifyContent: 'flex-end' }}>
           <div style={{
-            padding: '5px 12px', borderRadius: 16, fontSize: 11, fontWeight: 600,
+            padding: compact ? '3px 8px' : '5px 12px', borderRadius: 16, fontSize: compact ? 10 : 11, fontWeight: 600,
             background: isLicenseValid() ? 'rgba(255,255,255,0.2)' : 'rgba(220,38,38,0.3)',
-            color: '#FFFFFF',
+            color: '#FFFFFF', whiteSpace: 'nowrap',
           }}>
             {isLicenseValid() ? `🔑 ${licenseText}` : `⚠️ ${t('expired')}`}
           </div>
-          <button style={styles.kdsBtn} onClick={() => onNavigate('demo')}>🎬 Demo</button>
-          <button style={styles.kdsBtn} onClick={() => onNavigate('kds')}>📺 KDS</button>
-          <button style={styles.iconBtn} onClick={() => onNavigate('sync')}>📡</button>
-          <button style={styles.iconBtn} onClick={() => onNavigate('reports')}>📊</button>
-          <button style={styles.iconBtn} onClick={() => onNavigate('settings')}>⚙️</button>
+          <button style={{ ...styles.iconBtn, padding: compact ? '6px 8px' : '10px 12px', fontSize: compact ? 15 : 18 }} onClick={() => onNavigate('demo')}>🎬</button>
+          <button style={{ ...styles.iconBtn, padding: compact ? '6px 8px' : '10px 12px', fontSize: compact ? 15 : 18 }} onClick={() => onNavigate('kds')}>📺</button>
+          <button style={{ ...styles.iconBtn, padding: compact ? '6px 8px' : '10px 12px', fontSize: compact ? 15 : 18 }} onClick={() => onNavigate('sync')}>📡</button>
+          <button style={{ ...styles.iconBtn, padding: compact ? '6px 8px' : '10px 12px', fontSize: compact ? 15 : 18 }} onClick={() => onNavigate('reports')}>📊</button>
+          <button style={{ ...styles.iconBtn, padding: compact ? '6px 8px' : '10px 12px', fontSize: compact ? 15 : 18 }} onClick={() => onNavigate('settings')}>⚙️</button>
         </div>
       </div>
 
       {/* Stats */}
-      <div style={styles.statsBar}>
-        <StatCard icon="🪑" label={t('occupied')} value={occupiedCount} color="#EF4444" />
-        <StatCard icon="📦" label={t('takeaway')} value={takeawayCount} color="#F59E0B" />
-        <StatCard icon="💰" label={t('totalSales')} value={`RM ${todayRevenue.toFixed(2)}`} color="#FF6B2C" />
-        <StatCard icon="📋" label={t('totalOrders')} value={todayOrders.length} color="#16A34A" />
+      <div style={{ ...styles.statsBar, gap: compact ? 6 : 10, padding: compact ? '8px 10px' : '12px 18px' }}>
+        <StatCard icon="🪑" label={t('occupied')} value={occupiedCount} color="#EF4444" compact={compact} />
+        <StatCard icon="📦" label={t('takeaway')} value={takeawayCount} color="#F59E0B" compact={compact} />
+        <StatCard icon="💰" label={t('totalSales')} value={`RM ${todayRevenue.toFixed(2)}`} color="#FF6B2C" compact={compact} />
       </div>
 
       {/* Legend */}
@@ -166,7 +172,7 @@ export default function TableScreen({ onNavigate }) {
 
       {/* Grid */}
       <div style={styles.gridScroll}>
-        <div style={styles.grid}>
+        <div style={{ ...styles.grid, gridTemplateColumns: compact ? 'repeat(auto-fill, minmax(90px, 1fr))' : 'repeat(auto-fill, minmax(110px, 1fr))', gap: compact ? 8 : 12 }}>
           {state.tables.map(table => {
             const st = TABLE_STYLES[table.status]
             const orderCount = table.orderIds.length
@@ -289,21 +295,22 @@ export default function TableScreen({ onNavigate }) {
   )
 }
 
-function StatCard({ icon, label, value, color }) {
+function StatCard({ icon, label, value, color, compact }) {
   return (
     <div style={{
-      flex: 1, display: 'flex', alignItems: 'center', gap: 10,
-      background: 'var(--bg-card)', padding: '10px 14px', borderRadius: 12,
-      border: '1px solid var(--border)', minWidth: 120, boxShadow: 'var(--shadow-sm)',
+      flex: 1, display: 'flex', alignItems: 'center', gap: compact ? 6 : 10,
+      background: 'var(--bg-card)', padding: compact ? '8px 8px' : '10px 14px', borderRadius: 12,
+      border: '1px solid var(--border)', minWidth: compact ? 80 : 120, boxShadow: 'var(--shadow-sm)',
     }}>
       <div style={{
-        width: 36, height: 36, borderRadius: 10,
+        width: compact ? 28 : 36, height: compact ? 28 : 36, borderRadius: compact ? 8 : 10,
         background: `${color}15`, color,
-        display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 18,
+        display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: compact ? 14 : 18,
+        flexShrink: 0,
       }}>{icon}</div>
-      <div>
-        <div style={{ fontSize: 11, color: 'var(--text-light)' }}>{label}</div>
-        <div style={{ fontSize: 15, color: 'var(--text)', fontWeight: 700 }}>{value}</div>
+      <div style={{ minWidth: 0 }}>
+        <div style={{ fontSize: compact ? 10 : 11, color: 'var(--text-light)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{label}</div>
+        <div style={{ fontSize: compact ? 13 : 15, color: 'var(--text)', fontWeight: 700, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{value}</div>
       </div>
     </div>
   )
@@ -411,11 +418,6 @@ const styles = {
   iconBtn: {
     background: 'rgba(255,255,255,0.15)', border: '1px solid rgba(255,255,255,0.25)',
     borderRadius: 10, padding: '10px 12px', fontSize: 18, color: '#FFFFFF',
-  },
-  kdsBtn: {
-    background: 'rgba(255,255,255,0.2)', border: '1px solid rgba(255,255,255,0.35)',
-    borderRadius: 10, padding: '10px 14px', fontSize: 13, fontWeight: 700,
-    color: '#FFFFFF',
   },
   statsBar: {
     display: 'flex', gap: 10, padding: '12px 18px',

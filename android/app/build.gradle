@@ -3,6 +3,14 @@ apply plugin: 'com.android.application'
 android {
     namespace "com.warung365.pos"
     compileSdk rootProject.ext.compileSdkVersion
+    signingConfigs {
+        release {
+            storeFile file('../warung365.keystore')
+            storePassword 'warung365'
+            keyAlias 'warung365'
+            keyPassword 'warung365'
+        }
+    }
     defaultConfig {
         applicationId "com.warung365.pos"
         minSdkVersion rootProject.ext.minSdkVersion
@@ -18,8 +26,14 @@ android {
     }
     buildTypes {
         release {
+            signingConfig signingConfigs.release
             minifyEnabled false
             proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
+        }
+    }
+    applicationVariants.all { variant ->
+        variant.outputs.all {
+            outputFileName = "Warung365-${variant.versionName}.apk"
         }
     }
 }

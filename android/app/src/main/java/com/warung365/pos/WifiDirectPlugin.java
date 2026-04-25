@@ -31,8 +31,11 @@ import java.io.DataInputStream;
 import java.io.DataOutputStream;
 import java.io.IOException;
 import java.net.InetAddress;
+import java.net.InetSocketAddress;
+import java.net.NetworkInterface;
 import java.net.ServerSocket;
 import java.net.Socket;
+import java.util.Enumeration;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
@@ -57,6 +60,7 @@ public class WifiDirectPlugin extends Plugin {
   private BroadcastReceiver receiver;
   private final List<WifiP2pDevice> peers = new CopyOnWriteArrayList<>();
   private volatile WifiP2pInfo lastInfo = null;
+  private volatile WifiP2pDevice thisDevice = null;
 
   private volatile ServerSocket serverSocket = null;
   private final List<Socket> serverClients = new CopyOnWriteArrayList<>();
@@ -187,6 +191,40 @@ public class WifiDirectPlugin extends Plugin {
   }
 
   @PluginMethod
+  public void getThisDevice(PluginCall call) {
+    WifiP2pDevice d = thisDevice;
+    JSObject ret = new JSObject();
+    if (d == null) {
+      ret.put("available", false);
+      call.resolve(ret);
+      return;
+    }
+    ret.put("available", true);
+    ret.put("deviceName", d.deviceName);
+    ret.put("deviceAddress", d.deviceAddress);
+    ret.put("status", d.status);
+    call.resolve(ret);
+  }
+
+  @PluginMethod
+  public void getLocalIp(PluginCall call) {
+    JSObject ret = new JSObject();
+    try {
+      String ip = findLocalIpv4();
+      if (ip == null) {
+        ret.put("available", false);
+        call.resolve(ret);
+        return;
+      }
+      ret.put("available", true);
+      ret.put("ip", ip);
+      call.resolve(ret);
+    } catch (Exception e) {
+      call.reject("getLocalIp failed: " + e.getMessage());
+    }
+  }
+
+  @PluginMethod
   public void connect(PluginCall call) {
     if (!ensureReady(call)) return;
     String address = call.getString("deviceAddress", null);
@@ -225,31 +263,36 @@ public class WifiDirectPlugin extends Plugin {
     stopServerInternal();
     new Thread(() -> {
       try {
-        ServerSocket ss = new ServerSocket(port);
+        ServerSocket ss = new ServerSocket();
+        ss.setReuseAddress(true);
+        ss.bind(new InetSocketAddress("0.0.0.0", port), 10);
         serverSocket = ss;
-        JSObject ev = new JSObject();
-        ev.put("port", port);
-        notifyListeners("serverStarted", ev);
+
+        JSObject ret = new JSObject();
+        ret.put("ok", true);
+        ret.put("port", port);
+        ret.put("bound", ss.getLocalSocketAddress().toString());
+        call.resolve(ret);
+
+        notifyListeners("serverStarted", ret);
 
         while (!ss.isClosed()) {
-          Socket s = ss.accept();
-          serverClients.add(s);
-          notifyListeners("clientConnected", socketInfo(s));
-          startServerReadLoop(s);
+          try {
+            Socket s = ss.accept();
+            serverClients.add(s);
+            notifyListeners("clientConnected", socketInfo(s));
+            startServerReadLoop(s);
+          } catch (IOException acceptErr) {
+            if (ss.isClosed()) break;
+          }
         }
       } catch (IOException e) {
-        if (serverSocket != null) {
-          JSObject err = new JSObject();
-          err.put("message", e.getMessage());
-          notifyListeners("serverError", err);
-        }
+        JSObject err = new JSObject();
+        err.put("message", e.getMessage());
+        notifyListeners("serverError", err);
+        call.reject("Server start failed: " + e.getMessage());
       }
     }).start();
-
-    JSObject ret = new JSObject();
-    ret.put("ok", true);
-    ret.put("port", port);
-    call.resolve(ret);
   }
 
   @PluginMethod
@@ -264,34 +307,45 @@ public class WifiDirectPlugin extends Plugin {
   public void connectToGroupOwner(PluginCall call) {
     String host = call.getString("host", null);
     int port = call.getInt("port", 8765);
+    int retries = call.getInt("retries", 5);
 
     if (host == null || host.trim().isEmpty()) {
-      // Default Wi‑Fi Direct GO address (most devices)
       host = "192.168.49.1";
     }
 
     final String finalHost = host;
+    final int maxRetries = Math.max(1, retries);
     disconnectClientInternal();
     new Thread(() -> {
-      try {
-        Socket s = new Socket(finalHost, port);
-        clientSocket = s;
-        clientOut = new DataOutputStream(new BufferedOutputStream(s.getOutputStream()));
-        clientIn = new DataInputStream(new BufferedInputStream(s.getInputStream()));
-        notifyListeners("clientReady", socketInfo(s));
-        startClientReadLoop(s, clientIn);
-      } catch (IOException e) {
-        JSObject err = new JSObject();
-        err.put("message", e.getMessage());
-        notifyListeners("clientError", err);
+      IOException lastError = null;
+      for (int attempt = 1; attempt <= maxRetries; attempt++) {
+        try {
+          Socket s = new Socket(finalHost, port);
+          clientSocket = s;
+          clientOut = new DataOutputStream(new BufferedOutputStream(s.getOutputStream()));
+          clientIn = new DataInputStream(new BufferedInputStream(s.getInputStream()));
+          notifyListeners("clientReady", socketInfo(s));
+          startClientReadLoop(s, clientIn);
+          JSObject ret = new JSObject();
+          ret.put("ok", true);
+          ret.put("host", finalHost);
+          ret.put("port", port);
+          ret.put("attempt", attempt);
+          call.resolve(ret);
+          return;
+        } catch (IOException e) {
+          lastError = e;
+          if (attempt < maxRetries) {
+            try { Thread.sleep(2000); } catch (InterruptedException ignored) {}
+          }
+        }
       }
+      JSObject err = new JSObject();
+      err.put("message", lastError != null ? lastError.getMessage() : "Connection failed");
+      notifyListeners("clientError", err);
+      call.reject("TCP connect failed after " + maxRetries + " attempts: "
+        + (lastError != null ? lastError.getMessage() : "unknown"));
     }).start();
-
-    JSObject ret = new JSObject();
-    ret.put("ok", true);
-    ret.put("host", finalHost);
-    ret.put("port", port);
-    call.resolve(ret);
   }
 
   @PluginMethod
@@ -391,6 +445,16 @@ public class WifiDirectPlugin extends Plugin {
               notifyListeners("connectionInfo", infoToJS(info));
             });
           }
+        } else if (WifiP2pManager.WIFI_P2P_THIS_DEVICE_CHANGED_ACTION.equals(action)) {
+          WifiP2pDevice dev = intent.getParcelableExtra(WifiP2pManager.EXTRA_WIFI_P2P_DEVICE);
+          thisDevice = dev;
+          if (dev != null) {
+            JSObject ev = new JSObject();
+            ev.put("deviceName", dev.deviceName);
+            ev.put("deviceAddress", dev.deviceAddress);
+            ev.put("status", dev.status);
+            notifyListeners("thisDeviceChanged", ev);
+          }
         }
       }
     };
@@ -421,6 +485,59 @@ public class WifiDirectPlugin extends Plugin {
     InetAddress addr = info.groupOwnerAddress;
     o.put("groupOwnerAddress", addr != null ? addr.getHostAddress() : null);
     return o;
+  }
+
+  private String findLocalIpv4() {
+    try {
+      Enumeration<NetworkInterface> interfaces = NetworkInterface.getNetworkInterfaces();
+      if (interfaces == null) return null;
+      while (interfaces.hasMoreElements()) {
+        NetworkInterface nif = interfaces.nextElement();
+        if (nif == null) continue;
+        try {
+          if (!nif.isUp() || nif.isLoopback()) continue;
+        } catch (Exception ignored) {}
+
+        String name = nif.getName();
+        // Prefer Wi‑Fi interfaces
+        boolean preferred = name != null && (name.startsWith("wlan") || name.startsWith("wifi"));
+
+        Enumeration<InetAddress> addrs = nif.getInetAddresses();
+        while (addrs.hasMoreElements()) {
+          InetAddress addr = addrs.nextElement();
+          if (addr == null) continue;
+          String host = addr.getHostAddress();
+          if (host == null) continue;
+          // IPv4 only
+          if (host.contains(":")) continue;
+          if (host.startsWith("127.")) continue;
+          if (preferred) return host;
+        }
+      }
+      // Fallback: any non-loopback IPv4
+      interfaces = NetworkInterface.getNetworkInterfaces();
+      if (interfaces == null) return null;
+      while (interfaces.hasMoreElements()) {
+        NetworkInterface nif = interfaces.nextElement();
+        if (nif == null) continue;
+        try {
+          if (!nif.isUp() || nif.isLoopback()) continue;
+        } catch (Exception ignored) {}
+        Enumeration<InetAddress> addrs = nif.getInetAddresses();
+        while (addrs.hasMoreElements()) {
+          InetAddress addr = addrs.nextElement();
+          if (addr == null) continue;
+          String host = addr.getHostAddress();
+          if (host == null) continue;
+          if (host.contains(":")) continue;
+          if (host.startsWith("127.")) continue;
+          return host;
+        }
+      }
+      return null;
+    } catch (Exception e) {
+      return null;
+    }
   }
 
   private JSObject ok() {

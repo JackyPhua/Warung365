@@ -2,9 +2,15 @@
 // Thin wrapper around the native Capacitor WifiDirect plugin (Android only).
 // Web mode: all methods return safe fallbacks so the app doesn't crash.
 
+import { registerPlugin } from '@capacitor/core'
+
 let isNativeAndroid = false
+let nativePlugin = null
 try {
   isNativeAndroid = window?.Capacitor?.getPlatform?.() === 'android' && window?.Capacitor?.isNativePlatform?.()
+  if (isNativeAndroid) {
+    nativePlugin = registerPlugin('WifiDirect')
+  }
 } catch (e) {}
 
 function bytesToBase64(bytes) {
@@ -25,14 +31,12 @@ function base64ToBytes(base64) {
 }
 
 function getPlugin() {
-  const p = globalThis?.Capacitor?.Plugins?.WifiDirect
-  if (!p) throw new Error('WifiDirect plugin not available (native Android build only)')
-  return p
+  return nativePlugin
 }
 
 class WifiDirectService {
   get isSupported() {
-    return isNativeAndroid
+    return isNativeAndroid && !!nativePlugin
   }
 
   async requestPermissions() {
@@ -60,6 +64,16 @@ class WifiDirectService {
     return await getPlugin().getPeers()
   }
 
+  async getThisDevice() {
+    if (!this.isSupported) return { available: false }
+    return await getPlugin().getThisDevice()
+  }
+
+  async getLocalIp() {
+    if (!this.isSupported) return { available: false }
+    return await getPlugin().getLocalIp()
+  }
+
   async connect(deviceAddress) {
     if (!this.isSupported) throw new Error('Not supported')
     return await getPlugin().connect({ deviceAddress })
@@ -80,9 +94,9 @@ class WifiDirectService {
     return await getPlugin().stopServer()
   }
 
-  async connectToGroupOwner({ host, port = 8765 } = {}) {
+  async connectToGroupOwner({ host, port = 8765, retries = 5 } = {}) {
     if (!this.isSupported) throw new Error('Not supported')
-    return await getPlugin().connectToGroupOwner({ host, port })
+    return await getPlugin().connectToGroupOwner({ host, port, retries })
   }
 
   async disconnectClient() {

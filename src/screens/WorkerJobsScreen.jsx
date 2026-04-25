@@ -33,7 +33,7 @@ export default function WorkerJobsScreen({ onNavigate, job }) {
     <div style={S.container}>
       <div style={S.header}>
         <button style={S.backBtn} onClick={() => onNavigate('sync')}>←</button>
-        <div style={{ color: 'var(--primary)', fontSize: 16, fontWeight: 800 }}>🧾 接单</div>
+        <div style={{ color: 'var(--primary)', fontSize: 16, fontWeight: 800 }}>🧾 {t('myJobs')}</div>
         <div style={{ width: 70 }} />
       </div>
 
@@ -41,12 +41,12 @@ export default function WorkerJobsScreen({ onNavigate, job }) {
         <div style={S.statusBox}>
           <div style={{ color: 'var(--success)', fontWeight: 800 }}>● {t('connected')}</div>
           <div style={{ color: 'var(--text-light)', fontSize: 12, marginTop: 6 }}>
-            {pending.length} 单待处理
+            {pending.length} {t('jobsPending')}
           </div>
         </div>
 
         {jobs.length === 0 ? (
-          <div style={S.empty}>暂无新单</div>
+          <div style={S.empty}>{t('noNewJobs')}</div>
         ) : jobs.map(job => (
           <div key={job.jobId} style={S.card}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
@@ -76,10 +76,10 @@ export default function WorkerJobsScreen({ onNavigate, job }) {
             </div>
 
             <div style={{ display: 'flex', gap: 8, marginTop: 12 }}>
-              <button style={S.btn} onClick={() => DispatchService.acceptJob(job.jobId)}>✅ 接单</button>
+              <button style={S.btn} onClick={() => DispatchService.acceptJob(job.jobId)}>✅ {t('acceptJob')}</button>
               <button style={{ ...S.btn, background: 'var(--success)', color: '#FFF' }}
                 onClick={() => DispatchService.doneJob(job.jobId)}>
-                🏁 完成
+                🏁 {t('doneJob')}
               </button>
             </div>
           </div>

@@ -1,6 +1,6 @@
 // src/services/DispatchService.js
-// "1 host + many workers" dispatch over Wi‑Fi Direct TCP (Android APK).
-// Web mode: still generates QR but cannot auto-connect.
+// "1 host + many workers" dispatch over LAN TCP (Android APK).
+// Recommended: use a router hotspot. Web mode: generates QR but cannot auto-connect.
 
 import WifiDirectService from './WifiDirectService'
 
@@ -20,27 +20,33 @@ class DispatchService {
     this.workers = [] // { id, name, remoteAddress }
     this.onWorkers = null
     this.onJob = null
+    this.onState = null
+    this.onWorkerOrders = null
     this._unsubs = []
     this._workerId = null
     this._workerName = null
+    this._hostDeviceAddress = null
+    this._hostIp = null
   }
 
   get isNative() {
     return WifiDirectService.isSupported
   }
 
-  getJoinPayload({ shopName, storeId }) {
+  getJoinPayload({ shopName, storeId } = {}) {
     return {
       t: 'WORKER_JOIN',
       shopName: shopName || '',
       storeId: storeId || '',
       port: this.port,
+      hostDeviceAddress: this._hostDeviceAddress || undefined,
+      hostIp: this._hostIp || undefined,
       v: 1,
     }
   }
 
   async startHost({ shopName, storeId, onWorkers } = {}) {
-    this.stop()
+    await this.stop()
     this.mode = 'host'
     this.onWorkers = onWorkers || null
     this.workers = []
@@ -50,41 +56,40 @@ class DispatchService {
       return { ok: true, mode: 'web' }
     }
 
-    await WifiDirectService.requestPermissions()
-    await WifiDirectService.createGroupOwner()
+    // LAN hotspot mode: no peer discovery / no group owner creation.
+    // Host just starts a TCP server and publishes its LAN IP via QR.
     await WifiDirectService.startServer(this.port)
 
+    const ip = await WifiDirectService.getLocalIp()
+    this._hostIp = ip?.ip || null
+    this._hostDeviceAddress = null
+
     this._wire()
-    return { ok: true, join: this.getJoinPayload({ shopName, storeId }) }
+    return { ok: true, join: this.getJoinPayload({ shopName, storeId }), hostIp: this._hostIp }
   }
 
   async connectWorker({ joinPayload, name, onJob } = {}) {
-    this.stop()
+    await this.stop()
     this.mode = 'worker'
     this.onJob = onJob || null
     this._workerName = (name || uniqName()).trim()
 
     if (!this.isNative) {
-      throw new Error('Worker connect requires Android APK build')
+      // Fallback: use localStorage cross-tab sync instead of WifiDirect
+      this._workerId = `W-local-${Date.now()}`
+      return { ok: true, host: 'localStorage', port: 0, name: this._workerName, mode: 'local' }
     }
 
-    await WifiDirectService.requestPermissions()
-    await WifiDirectService.discoverPeers()
-
-    const peers = await this._waitForPeers(3000)
-    if (!peers.length) throw new Error('No Wi‑Fi Direct peers found')
-
-    await WifiDirectService.connect(peers[0].deviceAddress)
-
-    const info = await this._waitForConnectionInfo(7000)
-    const host = info?.groupOwnerAddress || '192.168.49.1'
+    const host = joinPayload?.hostIp
+    if (!host) throw new Error('Missing host IP in QR/JSON')
     const port = joinPayload?.port || this.port
 
-    await WifiDirectService.connectToGroupOwner({ host, port })
+    await WifiDirectService.connectToGroupOwner({ host, port, retries: 5 })
 
     this._wire()
 
-    // HELLO handshake
+    await new Promise(r => setTimeout(r, 300))
+
     await WifiDirectService.sendJson({
       t: 'HELLO',
       role: 'worker',
@@ -121,6 +126,20 @@ class DispatchService {
     if (this.mode !== 'host') return
     if (!this.isNative) return
     await WifiDirectService.sendJson({ t: 'NEW_JOB', job })
+  }
+
+  // Host: broadcast full state snapshot to workers
+  async broadcastState(state) {
+    if (this.mode !== 'host') return
+    if (!this.isNative) return
+    await WifiDirectService.sendJson({ t: 'STATE', state })
+  }
+
+  // Worker: send orders+tables snapshot back to host
+  async sendOrdersToHost(orders, tables) {
+    if (this.mode !== 'worker') return
+    if (!this.isNative) return
+    await WifiDirectService.sendJson({ t: 'WORKER_ORDERS', orders, tables })
   }
 
   // Worker: accept/done (optional for now)
@@ -187,8 +206,11 @@ class DispatchService {
       return
     }
 
-    // Optional: track accept/done
-    // For now just ignore or log.
+    // Worker pushed its orders/tables back to host
+    if (msg.t === 'WORKER_ORDERS' && msg.orders && msg.tables) {
+      if (this.onWorkerOrders) this.onWorkerOrders(msg.orders, msg.tables)
+      return
+    }
   }
 
   _handleWorkerMessage(msg) {
@@ -199,6 +221,10 @@ class DispatchService {
     }
     if (msg.t === 'NEW_JOB' && msg.job) {
       if (this.onJob) this.onJob(msg.job)
+      return
+    }
+    if (msg.t === 'STATE' && msg.state) {
+      if (this.onState) this.onState(msg.state)
       return
     }
   }

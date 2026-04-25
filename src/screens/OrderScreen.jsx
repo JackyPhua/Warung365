@@ -171,7 +171,7 @@ export default function OrderScreen({ orderId, tableId, onNavigate }) {
         <div onClick={() => setEditingNote(null)} style={S.modalOverlay}>
           <div onClick={e => e.stopPropagation()} style={S.modalBox}>
             <h3 style={{ color: 'var(--primary)', fontSize: 16, margin: '0 0 12px', textAlign: 'center', fontWeight: 700 }}>
-              📝 备注 / Remarks
+              📝 {t('remarks')}
             </h3>
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 12 }}>
               {quickNotes.map((qn, i) => (
@@ -182,10 +182,10 @@ export default function OrderScreen({ orderId, tableId, onNavigate }) {
               ))}
             </div>
             <textarea autoFocus style={S.noteInput} value={noteText}
-              onChange={e => setNoteText(e.target.value)} placeholder="输入备注..." rows={3} />
+              onChange={e => setNoteText(e.target.value)} placeholder={t('enterRemarks')} rows={3} />
             <div style={{ display: 'flex', gap: 10, marginTop: 12 }}>
-              <button style={S.modalCancelBtn} onClick={() => setEditingNote(null)}>取消</button>
-              <button style={S.modalSaveBtn} onClick={() => saveNote(editingNote)}>✓ 保存</button>
+              <button style={S.modalCancelBtn} onClick={() => setEditingNote(null)}>{t('cancel')}</button>
+              <button style={S.modalSaveBtn} onClick={() => saveNote(editingNote)}>✓ {t('save')}</button>
             </div>
           </div>
         </div>

@@ -115,7 +115,7 @@ const STEPS = [
 ]
 
 export default function DemoScreen({ onNavigate }) {
-  const { state } = useApp()
+  const { state, t } = useApp()
   const lang = state.language
   const [step, setStep] = useState(0)
   const [orders, setOrders] = useState(JSON.parse(JSON.stringify(DEMO_ORDERS)))
@@ -175,13 +175,13 @@ export default function DemoScreen({ onNavigate }) {
       {/* Header */}
       <div style={S.header}>
         <button style={S.backBtn} onClick={() => onNavigate('tables')}>
-          ← {lang === 'zh' ? '退出' : lang === 'ms' ? 'Keluar' : 'Exit'}
+          ← {t('exitDemo')}
         </button>
         <div style={S.headerTitle}>
-          {lang === 'zh' ? 'KDS 厨房显示系统 — 互动演示' : lang === 'ms' ? 'KDS Paparan Dapur — Demo Interaktif' : 'KDS Kitchen Display — Interactive Demo'}
+          {t('kds')} — {t('demoTitle')}
         </div>
         <button style={S.resetBtn} onClick={reset}>
-          {lang === 'zh' ? '重新开始' : lang === 'ms' ? 'Mula Semula' : 'Restart'}
+          {t('restartDemo')}
         </button>
       </div>
 
@@ -190,7 +190,7 @@ export default function DemoScreen({ onNavigate }) {
         {/* Panel 1: Cashier / Orders */}
         <div style={{ ...S.panel, borderColor: (hl === 'cashier' || hl === 'all') ? '#FF6B2C' : 'var(--border)' }}>
           <div style={{ ...S.panelHeader, background: (hl === 'cashier' || hl === 'all') ? '#FF6B2C' : 'var(--text-muted)' }}>
-            {lang === 'zh' ? '收银台 (POS)' : 'Cashier (POS)'}
+            {t('cashierPanel')} (POS)
           </div>
           <div style={S.panelBody}>
             {orders.filter(o => !o.items.every(i => i.kdsStatus === 'served')).map(o => (
@@ -222,11 +222,11 @@ export default function DemoScreen({ onNavigate }) {
         {/* Panel 2: Food KDS */}
         <div style={{ ...S.panel, borderColor: (hl === 'food_kds' || hl === 'both_kds' || hl === 'all') ? '#E53935' : 'var(--border)' }}>
           <div style={{ ...S.panelHeader, background: (hl === 'food_kds' || hl === 'both_kds' || hl === 'all') ? '#E53935' : 'var(--text-muted)' }}>
-            {lang === 'zh' ? '食物部 KDS' : lang === 'ms' ? 'KDS Makanan' : 'Food KDS'}
+            {t('foodKds')}
           </div>
           <div style={S.panelBody}>
             {foodItems.length === 0 ? (
-              <div style={S.emptyPanel}>{lang === 'zh' ? '暂无待处理' : 'No pending items'}</div>
+              <div style={S.emptyPanel}>{t('noPending')}</div>
             ) : (
               <KdsItemList items={foodItems} color="#E53935" lang={lang} />
             )}
@@ -236,11 +236,11 @@ export default function DemoScreen({ onNavigate }) {
         {/* Panel 3: Beverage KDS */}
         <div style={{ ...S.panel, borderColor: (hl === 'bev_kds' || hl === 'both_kds' || hl === 'all') ? '#2196F3' : 'var(--border)' }}>
           <div style={{ ...S.panelHeader, background: (hl === 'bev_kds' || hl === 'both_kds' || hl === 'all') ? '#2196F3' : 'var(--text-muted)' }}>
-            {lang === 'zh' ? '饮料部 KDS' : lang === 'ms' ? 'KDS Minuman' : 'Beverage KDS'}
+            {t('bevKds')}
           </div>
           <div style={S.panelBody}>
             {bevItems.length === 0 ? (
-              <div style={S.emptyPanel}>{lang === 'zh' ? '暂无待处理' : 'No pending items'}</div>
+              <div style={S.emptyPanel}>{t('noPending')}</div>
             ) : (
               <KdsItemList items={bevItems} color="#2196F3" lang={lang} />
             )}
@@ -250,24 +250,24 @@ export default function DemoScreen({ onNavigate }) {
         {/* Panel 4: Waiter */}
         <div style={{ ...S.panel, borderColor: (hl === 'waiter' || hl === 'all') ? '#16A34A' : 'var(--border)' }}>
           <div style={{ ...S.panelHeader, background: (hl === 'waiter' || hl === 'all') ? '#16A34A' : 'var(--text-muted)' }}>
-            {lang === 'zh' ? '服务员通知' : lang === 'ms' ? 'Notifikasi Pelayan' : 'Waiter Notification'}
+            {t('waiterPanel')}
           </div>
           <div style={S.panelBody}>
             {readyOrders.length === 0 ? (
               <div style={S.emptyPanel}>
-                {lang === 'zh' ? '等待厨房完成...' : 'Waiting for kitchen...'}
+                {t('noPending')}...
               </div>
             ) : (
               readyOrders.map(o => (
                 <div key={o.id} style={S.notifyCard}>
                   <div style={{ fontSize: 14, fontWeight: 700, color: '#15803D' }}>
-                    Table {o.tableId} — {lang === 'zh' ? '可上菜' : 'Ready'}
+                    {t('tableNo')} {o.tableId} — {t('readyToDeliver')}
                   </div>
                   <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 4 }}>
                     {o.items.map(i => i.name.split(' [')[0]).join(', ')}
                   </div>
                   <div style={S.serveBtnDemo}>
-                    {lang === 'zh' ? '送出' : 'Serve'}
+                    {t('serve')}
                   </div>
                 </div>
               ))
@@ -291,15 +291,15 @@ export default function DemoScreen({ onNavigate }) {
         <div style={S.stepDesc}>{currentStep.desc[lang] || currentStep.desc.en}</div>
         <div style={S.stepActions}>
           <button style={{ ...S.navBtn, opacity: canPrev ? 1 : 0.3 }} onClick={goPrev} disabled={!canPrev}>
-            ← {lang === 'zh' ? '上一步' : 'Back'}
+            ← {t('prevStep')}
           </button>
           {canNext ? (
             <button style={S.nextBtn} onClick={goNext}>
-              {lang === 'zh' ? '下一步' : 'Next'} →
+              {t('nextStep')} →
             </button>
           ) : (
             <button style={S.nextBtn} onClick={reset}>
-              {lang === 'zh' ? '重新播放' : 'Replay'}
+              {t('replay')}
             </button>
           )}
         </div>
@@ -308,7 +308,8 @@ export default function DemoScreen({ onNavigate }) {
   )
 }
 
-function KdsItemList({ items, color, lang }) {
+function KdsItemList({ items, color }) {
+  const { t } = useApp()
   const grouped = {}
   items.forEach(i => {
     if (!grouped[i.tableId]) grouped[i.tableId] = []
@@ -325,7 +326,7 @@ function KdsItemList({ items, color, lang }) {
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
           <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--text)' }}>Table {tableId}</span>
           {allReady && <span style={{ fontSize: 10, padding: '2px 8px', borderRadius: 8, background: '#DCFCE7', color: '#16A34A', fontWeight: 700 }}>
-            {lang === 'zh' ? '已完成' : 'Done'}
+            {t('completed')}
           </span>}
         </div>
         {its.map(i => (

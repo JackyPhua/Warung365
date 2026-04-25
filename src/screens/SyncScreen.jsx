@@ -8,32 +8,50 @@ export default function SyncScreen({ onNavigate }) {
   const { state, dispatch, t } = useApp()
   const normalizedMode = state.serverMode === 'sub' ? 'worker' : (state.serverMode || 'main')
   const [mode, setMode] = useState(normalizedMode)
-  const [isServerRunning, setIsServerRunning] = useState(false)
-  const [isClientConnected, setIsClientConnected] = useState(false)
-  const [subIp, setSubIp] = useState('')
   const [qrDataUrl, setQrDataUrl] = useState('')
-  const [localIp, setLocalIp] = useState('')
 
+  // Derive host status from global state (survives navigation away and back)
+  const isServerRunning = state.hostRunning
+  const localIp = state.hostIp || ''
+  const joinJson = state.joinJson || ''
+
+  // Re-generate QR whenever global join data changes
   useEffect(() => {
-    if (isServerRunning && localIp) {
-      const data = JSON.stringify(DispatchService.getJoinPayload({ shopName: state.shopName, storeId: state.storeId }))
-      QRCode.toDataURL(data, {
+    if (isServerRunning && joinJson) {
+      QRCode.toDataURL(joinJson, {
         width: 240,
         color: { dark: '#6B21A8', light: '#FFFFFF' },
       }).then(setQrDataUrl)
+    } else {
+      setQrDataUrl('')
     }
-  }, [isServerRunning, localIp, state.shopName, state.storeId])
+  }, [isServerRunning, joinJson])
+
+  // Re-wire onWorkers callback every time SyncScreen is shown (so it dispatches to live context)
+  useEffect(() => {
+    if (isServerRunning) {
+      DispatchService.onWorkers = (list) =>
+        dispatch({ type: 'SET_CONNECTED_CLIENTS', payload: list.map(w => `${w.name} (${w.remoteAddress})`) })
+    }
+    return () => {
+      // Don't null it out — AppContext still needs it via the host broadcast effect
+    }
+  }, [isServerRunning, dispatch])
 
   const startMain = async () => {
+    if (isServerRunning) return // already running — don't restart and kill workers
     try {
       const r = await DispatchService.startHost({
         shopName: state.shopName,
         storeId: state.storeId,
-        onWorkers: (list) => dispatch({ type: 'SET_CONNECTED_CLIENTS', payload: list.map(w => `${w.name} (${w.remoteAddress})`) }),
+        onWorkers: (list) =>
+          dispatch({ type: 'SET_CONNECTED_CLIENTS', payload: list.map(w => `${w.name} (${w.remoteAddress})`) }),
       })
-      // Keep UI compatible: show fixed GO gateway in native, or demo IP in web.
-      setLocalIp(DispatchService.isNative ? '192.168.49.1' : '192.168.1.100')
-      setIsServerRunning(true)
+      const ip = r?.hostIp || (DispatchService.isNative ? '' : '192.168.1.100')
+      const jj = r?.join ? JSON.stringify(r.join) : ''
+      dispatch({ type: 'SET_HOST_RUNNING', payload: true })
+      dispatch({ type: 'SET_HOST_IP', payload: ip })
+      dispatch({ type: 'SET_JOIN_JSON', payload: jj })
       dispatch({ type: 'SET_SERVER_MODE', payload: 'main' })
     } catch (e) {
       alert('❌ ' + e.message)
@@ -42,14 +60,16 @@ export default function SyncScreen({ onNavigate }) {
 
   const stopMain = () => {
     DispatchService.stop()
-    setIsServerRunning(false)
+    dispatch({ type: 'SET_HOST_RUNNING', payload: false })
+    dispatch({ type: 'SET_HOST_IP', payload: null })
+    dispatch({ type: 'SET_JOIN_JSON', payload: null })
     dispatch({ type: 'SET_CONNECTED_CLIENTS', payload: [] })
   }
 
   const connectWorker = () => onNavigate('workerJoin')
   const disconnectWorker = async () => {
     await DispatchService.stop()
-    setIsClientConnected(false)
+    dispatch({ type: 'SET_SERVER_MODE', payload: 'main' })
   }
 
   return (
@@ -93,15 +113,15 @@ export default function SyncScreen({ onNavigate }) {
         {mode === 'main' ? (
           <div style={styles.section}>
             <div style={styles.sectionTitle}>🖥️ {t('mainDevice')}</div>
-            <div style={styles.desc}>主机 (平板) 当服务器，工人手机扫码入场开始接单</div>
+            <div style={styles.desc}>{t('hostDesc')}</div>
 
             {!isServerRunning ? (
-              <button style={styles.primaryBtn} onClick={startMain}>▶ Start Server</button>
+              <button style={styles.primaryBtn} onClick={startMain}>▶ {t('startServer')}</button>
             ) : (
               <>
                 <div style={styles.statusBox}>
                   <div style={{ color: 'var(--success)', fontSize: 14, fontWeight: 700 }}>
-                    ● Server Running
+                    ● {t('serverRunning')}
                   </div>
                   <div style={{ color: 'var(--text)', fontSize: 15, marginTop: 6, fontWeight: 600 }}>
                     IP: {localIp}:8765
@@ -130,50 +150,38 @@ export default function SyncScreen({ onNavigate }) {
                   </div>
                 ))}
 
-                <button style={styles.dangerBtn} onClick={stopMain}>⏹ Stop</button>
+                <button style={styles.dangerBtn} onClick={stopMain}>⏹ {t('stopServer')}</button>
               </>
             )}
           </div>
         ) : (
           <div style={styles.section}>
-            <div style={styles.sectionTitle}>📱 工人手机</div>
-            <div style={styles.desc}>扫码主机入场码 → 自动连接 → 进入接单页面</div>
-
-            {!isClientConnected ? (
-              <button
-                style={{ ...styles.primaryBtn, background: 'var(--grad-gold)', color: 'var(--primary-dark)', boxShadow: 'var(--shadow-gold)' }}
-                onClick={connectWorker}
-              >
-                📷 扫码入场
-              </button>
-            ) : (
-              <>
-                <div style={styles.statusBox}>
-                  <div style={{ color: 'var(--success)', fontSize: 14, fontWeight: 700 }}>
-                    ● {t('connected')}
-                  </div>
-                </div>
-                <button style={styles.dangerBtn} onClick={disconnectWorker}>✂ Disconnect</button>
-              </>
-            )}
+            <div style={styles.sectionTitle}>📱 {t('workerPhone')}</div>
+            <div style={styles.desc}>{t('workerDesc')}</div>
+            <button
+              style={{ ...styles.primaryBtn, background: 'var(--grad-gold)', color: 'var(--primary-dark)', boxShadow: 'var(--shadow-gold)' }}
+              onClick={connectWorker}
+            >
+              📷 {t('scanToJoin')}
+            </button>
           </div>
         )}
 
         <div style={styles.infoBox}>
           <div style={{ color: 'var(--text)', fontSize: 13, fontWeight: 700, marginBottom: 10 }}>
-            ℹ️ Network
+            ℹ️ {t('networkInfo')}
           </div>
           <ul style={{ color: 'var(--text-light)', fontSize: 12, lineHeight: 1.9, paddingLeft: 20, margin: 0 }}>
-            <li>所有设备连同一 WiFi</li>
-            <li>不需要互联网（局域网）</li>
-            <li>端口 8765 (TCP)</li>
-            <li>断线自动重连</li>
+            <li>{t('sameWifi')}</li>
+            <li>{t('noInternet')}</li>
+            <li>{t('port')} 8765 (TCP)</li>
+            <li>{t('autoReconnect')}</li>
           </ul>
           <div style={{
             marginTop: 10, padding: 10, borderRadius: 8,
             background: 'var(--warning-light)', color: '#92400E', fontSize: 11,
           }}>
-            ⚠️ 浏览器模拟模式 — 打包成 APK 后使用原生 TCP 真正同步
+            ⚠️ {t('webSimWarn')}
           </div>
         </div>
       </div>

@@ -219,7 +219,7 @@ function CategoryBlock({ category, lang, mt, onEditCategory, onDeleteCategory, o
                 </div>
                 <div style={{ color: 'var(--text-light)', fontSize: 11, marginTop: 3 }}>
                   {item.type === 'simple' && `RM ${item.price?.toFixed(2)}`}
-                  {item.type === 'portion' && `${item.portions?.length || 0} 份量`}
+                  {item.type === 'portion' && `${item.portions?.length || 0} ${mt('portionList')}`}
                   {item.type === 'multi' && `${item.group1?.length}·${item.group2?.length} · RM ${item.price?.toFixed(2)}`}
                 </div>
               </div>
@@ -348,12 +348,12 @@ function ItemEditor({ item, lang, mt, onSave, onClose }) {
   const [type, setType] = useState(item?.type || 'simple')
   const [price, setPrice] = useState(item?.price || 0)
   const [portions, setPortions] = useState(item?.portions || [
-    { id: uuidv4(), name: { zh: '小份' }, price: 5.0 },
-    { id: uuidv4(), name: { zh: '大份' }, price: 7.0 },
+    { id: uuidv4(), name: { zh: '小份', en: 'Small', ms: 'Kecil' }, price: 5.0 },
+    { id: uuidv4(), name: { zh: '大份', en: 'Large', ms: 'Besar' }, price: 7.0 },
   ])
-  const [group1Label, setGroup1Label] = useState(item?.group1Label?.zh || (lang === 'en' ? 'Option 1' : lang === 'ms' ? 'Pilihan 1' : '选项1'))
+  const [group1Label, setGroup1Label] = useState(item?.group1Label?.zh || mt('optionGroup1'))
   const [group1, setGroup1] = useState(item?.group1 || [{ id: uuidv4(), name: { zh: '' } }])
-  const [group2Label, setGroup2Label] = useState(item?.group2Label?.zh || (lang === 'en' ? 'Option 2' : lang === 'ms' ? 'Pilihan 2' : '选项2'))
+  const [group2Label, setGroup2Label] = useState(item?.group2Label?.zh || mt('optionGroup2'))
   const [group2, setGroup2] = useState(item?.group2 || [{ id: uuidv4(), name: { zh: '' } }])
 
   const handleSave = () => {
@@ -488,7 +488,7 @@ function ItemEditor({ item, lang, mt, onSave, onClose }) {
             value={price} onChange={e => setPrice(e.target.value)}
           />
 
-          <label style={styles.label}>{mt('optionGroup1')} · {mt('optionLabel')} (可选价格)</label>
+          <label style={styles.label}>{mt('optionGroup1')} · {mt('optionLabel')} ({mt('price')})</label>
           <input style={styles.input} value={group1Label} onChange={e => setGroup1Label(e.target.value)} />
           {group1.map((g, i) => (
             <div key={g.id} style={{ display: 'flex', gap: 6, marginBottom: 6 }}>
@@ -500,7 +500,7 @@ function ItemEditor({ item, lang, mt, onSave, onClose }) {
                   next[i] = { ...g, name: { zh: e.target.value } }
                   setGroup1(next)
                 }}
-                placeholder="名称"
+                placeholder={mt('name')}
               />
               <input
                 style={{ ...styles.input, width: 80, margin: 0 }}
@@ -512,7 +512,7 @@ function ItemEditor({ item, lang, mt, onSave, onClose }) {
                   next[i] = { ...g, price: val }
                   setGroup1(next)
                 }}
-                placeholder="RM(选填)"
+                placeholder="RM"
               />
               <button
                 style={styles.smallDelBtn}

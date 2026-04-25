@@ -161,7 +161,7 @@ export default function ReportsScreen({ onNavigate }) {
             style={styles.searchInput}
             value={searchQuery}
             onChange={e => setSearchQuery(e.target.value)}
-            placeholder="🔍 搜索订单号/菜名/桌号..."
+            placeholder={`🔍 ${t('search')} ${t('orderNo')}/${t('dishName')}/${t('tableNo')}...`}
           />
         </div>
       )}
@@ -177,7 +177,7 @@ export default function ReportsScreen({ onNavigate }) {
           <>
             {daily.topItems.length > 0 && (
               <div style={styles.section}>
-                <div style={styles.sectionTitle}>🏆 热销榜</div>
+                <div style={styles.sectionTitle}>🏆 {t('topSelling')}</div>
                 {daily.topItems.map((item, i) => (
                   <div key={i} style={styles.rankRow}>
                     <div style={{
@@ -199,7 +199,7 @@ export default function ReportsScreen({ onNavigate }) {
                 {searchQuery && <span style={{ color: 'var(--primary)', fontSize: 12 }}> — "{searchQuery}"</span>}
               </div>
               {daily.orders.length === 0 ? (
-                <div style={styles.empty}>{searchQuery ? '没有找到匹配的订单' : t('noItems')}</div>
+                <div style={styles.empty}>{searchQuery ? t('noMatchOrders') : t('noItems')}</div>
               ) : daily.orders.map(order => {
                 const paid = (order.payment?.received || 0) - (order.payment?.change || 0)
                 const time = new Date(order.completedAt).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })
@@ -233,7 +233,7 @@ export default function ReportsScreen({ onNavigate }) {
           </>
         ) : (
           <div style={styles.section}>
-            <div style={styles.sectionTitle}>📊 每日销售</div>
+            <div style={styles.sectionTitle}>📊 {t('dailySales')}</div>
             {monthly.byDay.length === 0 ? (
               <div style={styles.empty}>{t('noItems')}</div>
             ) : monthly.byDay.map(d => {
@@ -260,14 +260,14 @@ export default function ReportsScreen({ onNavigate }) {
         <div onClick={() => setShowExport(false)} style={expStyles.overlay}>
           <div onClick={e => e.stopPropagation()} style={expStyles.box}>
             <h3 style={{ color: 'var(--primary)', fontSize: 18, margin: '0 0 16px', textAlign: 'center', fontWeight: 700 }}>
-              📥 数据导出 / Export
+              📥 {t('dataExport')}
             </h3>
 
             <button style={expStyles.optionBtn} onClick={exportCSV}>
               <div>
-                <div style={{ fontWeight: 700, fontSize: 15 }}>📊 导出 CSV</div>
+                <div style={{ fontWeight: 700, fontSize: 15 }}>📊 {t('exportCsv')}</div>
                 <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 4 }}>
-                  可用 Excel / Google Sheets 打开
+                  {t('openWith')}
                 </div>
               </div>
               <span style={{ fontSize: 20 }}>→</span>
@@ -275,16 +275,16 @@ export default function ReportsScreen({ onNavigate }) {
 
             <button style={expStyles.optionBtn} onClick={exportJSON}>
               <div>
-                <div style={{ fontWeight: 700, fontSize: 15 }}>💾 导出 JSON（完整备份）</div>
+                <div style={{ fontWeight: 700, fontSize: 15 }}>💾 {t('exportBackup')}</div>
                 <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 4 }}>
-                  包含订单 + 菜单 + 设置，可恢复
+                  {t('backupDesc')}
                 </div>
               </div>
               <span style={{ fontSize: 20 }}>→</span>
             </button>
 
             <div style={{ color: 'var(--text-muted)', fontSize: 11, marginTop: 12, textAlign: 'center' }}>
-              共 {state.completedOrders.length} 笔订单
+              {t('totalOrderCount').replace('{n}', state.completedOrders.length)}
             </div>
 
             <button style={expStyles.closeBtn} onClick={() => setShowExport(false)}>
