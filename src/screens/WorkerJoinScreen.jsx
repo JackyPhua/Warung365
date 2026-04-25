@@ -5,7 +5,7 @@ import { useApp } from '../context/AppContext'
 import DispatchService from '../services/DispatchService'
 
 export default function WorkerJoinScreen({ onNavigate }) {
-  const { t } = useApp()
+  const { t, dispatch } = useApp()
   const videoRef = useRef(null)
   const codeReaderRef = useRef(null)
   const [status, setStatus] = useState('')
@@ -69,6 +69,8 @@ export default function WorkerJoinScreen({ onNavigate }) {
         name: workerName.trim() || undefined,
         onJob: (job) => onNavigate('workerJobs', { job }),
       })
+      // Mark this device as worker so AppContext sync effects activate
+      dispatch({ type: 'SET_SERVER_MODE', payload: 'sub' })
       setStatus('✅ Connected!')
       setConnecting(false)
       onNavigate('tables')
