@@ -7,37 +7,51 @@ import DispatchService from '../services/DispatchService'
 export default function WorkerJoinScreen({ onNavigate }) {
   const { t, dispatch } = useApp()
   const videoRef = useRef(null)
+  const nameInputRef = useRef(null)
   const codeReaderRef = useRef(null)
   const [status, setStatus] = useState('')
   const [jsonText, setJsonText] = useState('')
   const [workerName, setWorkerName] = useState('')
-
   const [scanning, setScanning] = useState(false)
 
   useEffect(() => {
+    // Focus name input on mount so keyboard appears immediately
+    setTimeout(() => nameInputRef.current?.focus(), 400)
     return () => {
       try { codeReaderRef.current?.reset?.() } catch (_) {}
     }
   }, [])
 
+  const focusNameInput = () => {
+    // Re-enable keyboard after camera use on Android WebView
+    setTimeout(() => {
+      if (nameInputRef.current) {
+        nameInputRef.current.blur()
+        setTimeout(() => nameInputRef.current?.focus(), 100)
+      }
+    }, 200)
+  }
+
   const startScan = async () => {
     if (scanning) return
     const codeReader = new BrowserMultiFormatReader()
     codeReaderRef.current = codeReader
-    setScanning(true)  // This makes the <video> display:block
+    setScanning(true)
     setStatus('📷 Opening camera...')
     try {
-      // Wait for React to re-render and video element to become visible (display:block)
+      // Wait for React to re-render so <video> becomes display:block
       await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)))
       const result = await codeReader.decodeOnceFromVideoDevice(undefined, videoRef.current)
       const text = result?.getText?.() || ''
       setJsonText(text)
-      setStatus('✅ QR decoded')
+      setStatus('✅ QR decoded — type name below then connect')
     } catch (e) {
       setStatus('❌ Camera: ' + (e?.message || String(e)))
     } finally {
       setScanning(false)
       try { codeReaderRef.current?.reset?.() } catch (_) {}
+      // Re-enable text input after camera releases on Android
+      focusNameInput()
     }
   }
 
@@ -68,9 +82,7 @@ export default function WorkerJoinScreen({ onNavigate }) {
         name: workerName.trim() || undefined,
         onJob: (job) => onNavigate('workerJobs', { job }),
       })
-      // Adopt host's language so UI matches
       if (joinPayload.language) dispatch({ type: 'SET_LANGUAGE', payload: joinPayload.language })
-      // Mark this device as worker so AppContext sync effects activate
       dispatch({ type: 'SET_SERVER_MODE', payload: 'sub' })
       setStatus('✅ Connected!')
       setConnecting(false)
@@ -96,22 +108,17 @@ export default function WorkerJoinScreen({ onNavigate }) {
           </div>
         )}
 
-        <div style={S.section}>
-          <div style={S.sectionTitle}>👤 {t('workerName')}（{t('optional')}）</div>
-          <input
-            type="text"
-            autoComplete="off"
-            style={S.input}
-            value={workerName}
-            onChange={e => setWorkerName(e.target.value)}
-            placeholder="Worker-01"
-          />
-        </div>
-
+        {/* Camera section FIRST — user scans QR, then immediately sees name input below */}
         <div style={S.section}>
           <div style={S.sectionTitle}>📷 {t('cameraScan')}</div>
-          {/* video is ALWAYS in DOM (for ref), but hidden when not scanning so it can't intercept touches */}
-          <video ref={videoRef} style={{ ...S.video, display: scanning ? 'block' : 'none' }} muted playsInline />
+          {/* Video only in DOM when scanning to avoid any touch interception */}
+          {scanning && (
+            <video ref={videoRef} style={S.video} muted playsInline />
+          )}
+          {/* Dummy hidden video keeps ref available on first render before scanning */}
+          {!scanning && (
+            <video ref={videoRef} style={{ display: 'none' }} muted playsInline />
+          )}
           {!scanning && (
             <button
               style={{ ...S.primaryBtn, marginTop: 0, background: 'var(--grad-gold)', color: 'var(--primary-dark)' }}
@@ -121,6 +128,25 @@ export default function WorkerJoinScreen({ onNavigate }) {
             </button>
           )}
           {status && <div style={{ marginTop: 10, color: 'var(--text)', fontSize: 12 }}>{status}</div>}
+        </div>
+
+        {/* Name input BELOW camera — user naturally looks here after scanning */}
+        <div style={S.section}>
+          <div style={S.sectionTitle}>👤 {t('workerName')}（{t('optional')}）</div>
+          <input
+            ref={nameInputRef}
+            type="text"
+            inputMode="text"
+            autoComplete="off"
+            autoCorrect="off"
+            autoCapitalize="none"
+            style={S.input}
+            value={workerName}
+            onChange={e => setWorkerName(e.target.value)}
+            onTouchEnd={e => { e.stopPropagation(); e.currentTarget.focus() }}
+            onClick={e => e.currentTarget.focus()}
+            placeholder="Worker-01"
+          />
         </div>
 
         <div style={S.section}>
@@ -153,28 +179,25 @@ const S = {
     padding: '12px 18px', background: 'var(--bg-card)', borderBottom: '1px solid var(--border)',
   },
   backBtn: { background: 'var(--bg-lighter)', color: 'var(--text)', border: '1px solid var(--border)', padding: '8px 14px', borderRadius: 10, fontSize: 14 },
-  scroll: { flex: 1, overflow: 'auto', padding: 16 },
+  // Use overflowY:'scroll' not 'auto' — Android WebView handles scroll+input better with 'scroll'
+  scroll: { flex: 1, overflowY: 'scroll', WebkitOverflowScrolling: 'touch', padding: 16 },
   warn: { background: 'var(--warning-light)', border: '1px solid var(--warning)', color: '#92400E', padding: 12, borderRadius: 10, marginBottom: 12, fontSize: 12, lineHeight: 1.6 },
-  section: { position: 'relative', zIndex: 1, background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 14, padding: 16, marginBottom: 12 },
+  section: { background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 14, padding: 16, marginBottom: 12 },
   sectionTitle: { color: 'var(--text)', fontSize: 13, fontWeight: 800, marginBottom: 10 },
   input: {
-    position: 'relative',
-    zIndex: 10,
+    display: 'block',
     width: '100%',
     background: 'var(--bg-input)',
-    border: '1px solid var(--border)',
+    border: '2px solid var(--primary)',
     borderRadius: 10,
-    padding: '12px 14px',
-    fontSize: 16,
+    padding: '14px 14px',
+    fontSize: 18,
     color: 'var(--text)',
     boxSizing: 'border-box',
-    pointerEvents: 'auto',
-    touchAction: 'manipulation',
     WebkitUserSelect: 'text',
     userSelect: 'text',
   },
-  video: { width: '100%', borderRadius: 12, objectFit: 'cover', pointerEvents: 'none', border: '1px solid var(--border)' },
+  video: { width: '100%', borderRadius: 12, objectFit: 'cover', border: '1px solid var(--border)' },
   textarea: { width: '100%', background: 'var(--bg-input)', border: '1px solid var(--border)', borderRadius: 12, padding: 12, fontSize: 13, color: 'var(--text)', boxSizing: 'border-box', resize: 'vertical', fontFamily: "'Courier New', Courier, monospace" },
   primaryBtn: { width: '100%', marginTop: 10, padding: 14, background: 'var(--grad-primary)', color: '#FFFFFF', borderRadius: 12, fontSize: 15, fontWeight: 800, boxShadow: 'var(--shadow-purple)' },
 }
-

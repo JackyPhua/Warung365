@@ -277,16 +277,26 @@ function reducer(state, action) {
     }
 
     // Worker receives host state → apply host state BUT keep local-only orders not yet on host.
-    // Orders that appear in host's completedOrders have been checked out → remove them.
+    // Host broadcasts recentCheckedOutIds (just IDs, last 10min) instead of full completedOrders.
+    // Key rule: if host says a table is PAID or EMPTY, trust it unconditionally.
     case 'MERGE_HOST_STATE': {
       const hostState = action.payload
-      const checkedOutIds = new Set((hostState.completedOrders || []).map(o => o.id))
+      // Collect checked-out IDs from both sources (legacy completedOrders + new recentCheckedOutIds)
+      const checkedOutIds = new Set([
+        ...(hostState.completedOrders || []).map(o => o.id),
+        ...(hostState.recentCheckedOutIds || []),
+      ])
       const mergedOrders = { ...(hostState.orders || {}) }
       // Keep local orders that host hasn't received yet AND haven't been checked out
       for (const [id, order] of Object.entries(state.orders)) {
         if (!mergedOrders[id] && !checkedOutIds.has(id)) mergedOrders[id] = order
       }
       const mergedTables = (hostState.tables || state.tables).map(hostTable => {
+        // Host says PAID or EMPTY → trust unconditionally, don't add any local orders
+        if (hostTable.status === TABLE_STATUS.PAID || hostTable.status === TABLE_STATUS.EMPTY) {
+          return hostTable
+        }
+        // Host says OCCUPIED/TAKEAWAY → merge with local-only orders not yet on host
         const localTable = state.tables.find(t => t.id === hostTable.id)
         if (!localTable) return hostTable
         const localOnly = localTable.orderIds.filter(
@@ -295,7 +305,9 @@ function reducer(state, action) {
         if (localOnly.length === 0) return hostTable
         return { ...hostTable, orderIds: [...hostTable.orderIds, ...localOnly], status: TABLE_STATUS.OCCUPIED }
       })
-      return { ...state, ...hostState, orders: mergedOrders, tables: mergedTables }
+      // Don't overwrite worker's own completedOrders/menu — host's copies can be stale or large
+      const { completedOrders: _c, recentCheckedOutIds: _r, menu: _m, ...safeHostState } = hostState
+      return { ...state, ...safeHostState, orders: mergedOrders, tables: mergedTables }
     }
 
     case 'ADD_READY_NOTIFY':
@@ -424,16 +436,24 @@ export function AppProvider({ children }) {
   }, [isWorker])
 
   // LAN sync: host broadcasts state to workers when it changes (debounced).
-  // Strip host-only / device-specific fields so workers don't overwrite their own role/mode.
-  // No syncFromNetwork guard here — host must always broadcast after any state change
-  // (including after merging worker orders). Loop prevention is on the worker side only.
+  // Strip host-only and large fields. Send recentCheckedOutIds (IDs only, last 10min)
+  // instead of full completedOrders so workers can detect paid tables without a large payload.
   useEffect(() => {
     if (!DispatchService.isNative) return
     if (isWorker) return
     if (DispatchService.mode !== 'host') return
     const id = setTimeout(() => {
-      const { serverMode, hostRunning, hostIp, joinJson, connectedClients, deviceRole, ...sharedState } = state
-      DispatchService.broadcastState(sharedState).catch(() => {})
+      const {
+        serverMode, hostRunning, hostIp, joinJson, connectedClients, deviceRole,
+        menu,           // workers have their own menu
+        completedOrders, // large; workers don't need full history
+        ...sharedState
+      } = state
+      const tenMinAgo = Date.now() - 10 * 60 * 1000
+      const recentCheckedOutIds = (completedOrders || [])
+        .filter(o => o.completedAt && new Date(o.completedAt).getTime() > tenMinAgo)
+        .map(o => o.id)
+      DispatchService.broadcastState({ ...sharedState, recentCheckedOutIds }).catch(() => {})
     }, 200)
     return () => clearTimeout(id)
   }, [state, isWorker])
