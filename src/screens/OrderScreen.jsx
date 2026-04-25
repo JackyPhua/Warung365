@@ -4,9 +4,11 @@ import { v4 as uuidv4 } from 'uuid'
 import { useApp } from '../context/AppContext'
 import PrinterService from '../services/PrinterService'
 import SoundService from '../services/SoundService'
+import DispatchService from '../services/DispatchService'
 
 export default function OrderScreen({ orderId, tableId, onNavigate }) {
   const { state, dispatch, t, getOrderTotal } = useApp()
+  const isWaiter = state.deviceRole === 'waiter'
   const [showCheckout, setShowCheckout] = useState(false)
   const [showReceipt, setShowReceipt] = useState(null) // { order, payment } or null
   const [editingNote, setEditingNote] = useState(null)
@@ -64,15 +66,26 @@ export default function OrderScreen({ orderId, tableId, onNavigate }) {
     SoundService.paymentSound()
 
     // Show receipt preview BEFORE dispatching (order still exists)
-    setShowReceipt({ order: { ...order }, payment, shopName: state.shopName, tableId })
+    setShowReceipt({ order: { ...order }, payment, shopName: state.shopName, storeId: state.storeId, tableId })
 
     dispatch({ type: 'CHECKOUT_ORDER', payload: { orderId, tableId, payment } })
 
     if (state.printerConnected) {
       try {
-        await PrinterService.printKitchenTicket({ shopName: state.shopName, tableId, order, t })
-        await PrinterService.printReceipt({ shopName: state.shopName, tableId, order, payment, t })
+        await PrinterService.printKitchenTicket({ shopName: state.shopName, storeId: state.storeId, tableId, order, t })
+        await PrinterService.printReceipt({ shopName: state.shopName, storeId: state.storeId, tableId, order, payment, t })
       } catch (e) { alert(t('printer') + ': ' + e.message) }
+    }
+
+    // Dispatch to workers (host only)
+    if (state.serverMode === 'main') {
+      const job = {
+        jobId: order.id,
+        tableId,
+        placedAt: order.createdAt || new Date().toISOString(),
+        items: (order.items || []).map(i => ({ name: i.name, qty: i.qty, note: i.note || '' })),
+      }
+      DispatchService.broadcastNewJob(job).catch(() => {})
     }
   }
 
@@ -131,19 +144,25 @@ export default function OrderScreen({ orderId, tableId, onNavigate }) {
           <span style={{ color: 'var(--primary)', fontSize: 28, fontWeight: 800 }}>RM {total.toFixed(2)}</span>
         </div>
         <div style={{ display: 'flex', gap: 8 }}>
-          <button style={S.cancelBtn} onClick={() => {
-            if (confirm(t('cancelOrder') + '?')) {
-              dispatch({ type: 'CANCEL_ORDER', payload: { orderId, tableId } }); SoundService.errorSound(); onNavigate('tables')
-            }
-          }}>{t('cancelOrder')}</button>
+          {!isWaiter && (
+            <button style={S.cancelBtn} onClick={() => {
+              if (confirm(t('cancelOrder') + '?')) {
+                dispatch({ type: 'CANCEL_ORDER', payload: { orderId, tableId } }); SoundService.errorSound(); onNavigate('tables')
+              }
+            }}>{t('cancelOrder')}</button>
+          )}
           <button style={S.kitchenBtn} onClick={async () => {
             if (!state.printerConnected) { alert(t('disconnected')); return }
             try { await PrinterService.printKitchenTicket({ shopName: state.shopName, tableId, order, t }); alert('✅') } catch (e) { alert('❌ ' + e.message) }
           }}>🖨️</button>
-          <button style={{ ...S.checkoutBtn, opacity: order.items.length === 0 ? 0.3 : 1 }}
-            onClick={() => { if (order.items.length > 0) setShowCheckout(true) }}>
-            💳 {t('checkout')}
-          </button>
+          {isWaiter ? (
+            <div style={S.waiterHint}>🔒 {t('noCheckoutPermission')}</div>
+          ) : (
+            <button style={{ ...S.checkoutBtn, opacity: order.items.length === 0 ? 0.3 : 1 }}
+              onClick={() => { if (order.items.length > 0) setShowCheckout(true) }}>
+              💳 {t('checkout')}
+            </button>
+          )}
         </div>
       </div>
 
@@ -183,7 +202,7 @@ export default function OrderScreen({ orderId, tableId, onNavigate }) {
 
 // ═══ Receipt Preview ═══
 function ReceiptPreview({ data, t, onClose }) {
-  const { order, payment, shopName, tableId } = data
+  const { order, payment, shopName, storeId, tableId } = data
   const subtotal = order.items.reduce((s, i) => s + i.price * i.qty, 0)
   const now = new Date()
   const dateStr = now.toLocaleDateString('en-GB')
@@ -195,6 +214,7 @@ function ReceiptPreview({ data, t, onClose }) {
         {/* Simulated receipt paper */}
         <div style={R.paper}>
           <div style={R.shopName}>{shopName}</div>
+          {storeId && <div style={R.subTitle}>ID: {storeId}</div>}
           <div style={R.divider}>- - - - - - - - - - - - - - -</div>
           <div style={R.infoRow}>
             <span>{dateStr}</span><span>{timeStr}</span>
@@ -256,6 +276,7 @@ const R = {
     boxShadow: '0 10px 40px rgba(0,0,0,0.4)',
   },
   shopName: { textAlign: 'center', fontSize: 18, fontWeight: 800, marginBottom: 4 },
+  subTitle: { textAlign: 'center', fontSize: 12, color: '#555', marginBottom: 2 },
   divider: { textAlign: 'center', color: '#999', margin: '6px 0', letterSpacing: 2 },
   infoRow: { display: 'flex', justifyContent: 'space-between', fontSize: 12, color: '#555' },
   itemRow: { display: 'flex', justifyContent: 'space-between', padding: '2px 0' },
@@ -369,6 +390,7 @@ const S = {
   cancelBtn: { background: 'var(--danger-light)', color: 'var(--danger)', padding: '12px 14px', borderRadius: 12, fontSize: 13, border: '1px solid var(--danger)' },
   kitchenBtn: { background: 'var(--bg-lighter)', border: '1px solid var(--border)', padding: '12px 16px', borderRadius: 12, fontSize: 20 },
   checkoutBtn: { flex: 1, background: 'var(--grad-primary)', color: '#FFFFFF', padding: 14, borderRadius: 12, fontSize: 16, fontWeight: 800 },
+  waiterHint: { flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 14, borderRadius: 12, background: 'var(--bg-lighter)', border: '1px solid var(--border)', color: 'var(--text-muted)', fontSize: 13, fontWeight: 600 },
   modalOverlay: { position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'flex-end', justifyContent: 'center', zIndex: 100, animation: 'fadeIn 0.15s' },
   modalBox: { width: '100%', maxWidth: 520, background: 'var(--bg-card)', borderRadius: '20px 20px 0 0', padding: 20, animation: 'slideUp 0.25s', borderTop: '3px solid var(--warning)' },
   quickNoteBtn: { padding: '6px 12px', borderRadius: 16, background: 'var(--warning-light)', border: '1px solid var(--warning)', color: 'var(--text)', fontSize: 12, fontWeight: 600 },

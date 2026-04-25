@@ -49,6 +49,13 @@ class SoundService {
     setTimeout(() => this.beep(200, 0.3), 200)
   }
 
+  // Ready-to-serve notification: 3-tone chime
+  notifySound() {
+    this.beep(880, 0.15)
+    setTimeout(() => this.beep(1100, 0.15), 180)
+    setTimeout(() => this.beep(1320, 0.25), 360)
+  }
+
   // Button tap
   tapSound() {
     this.beep(1000, 0.05)

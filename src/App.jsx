@@ -8,6 +8,10 @@ import ReportsScreen from './screens/ReportsScreen'
 import SettingsScreen from './screens/SettingsScreen'
 import SyncScreen from './screens/SyncScreen'
 import MenuManagerScreen from './screens/MenuManagerScreen'
+import WorkerJoinScreen from './screens/WorkerJoinScreen'
+import WorkerJobsScreen from './screens/WorkerJobsScreen'
+import KitchenDisplayScreen from './screens/KitchenDisplayScreen'
+import DemoScreen from './screens/DemoScreen'
 
 export default function App() {
   const [route, setRoute] = useState({ name: 'tables', params: {} })
@@ -32,6 +36,14 @@ export default function App() {
         return <SyncScreen onNavigate={navigate} />
       case 'menuManager':
         return <MenuManagerScreen onNavigate={navigate} />
+      case 'workerJoin':
+        return <WorkerJoinScreen onNavigate={navigate} />
+      case 'workerJobs':
+        return <WorkerJobsScreen {...route.params} onNavigate={navigate} />
+      case 'kds':
+        return <KitchenDisplayScreen {...route.params} onNavigate={navigate} />
+      case 'demo':
+        return <DemoScreen onNavigate={navigate} />
       default:
         return <TableScreen onNavigate={navigate} />
     }

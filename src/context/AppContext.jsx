@@ -16,6 +16,7 @@ export const TABLE_STATUS = {
 const initialState = {
   language: 'zh',
   shopName: 'Warung365',
+  storeId: '',
   taxRate: 0,
   tableCount: 20,
   tables: Array.from({ length: 20 }, (_, i) => ({
@@ -42,6 +43,7 @@ const initialState = {
     extra: 1.0,
     extra_takeaway: 1.5,
   },
+  deviceRole: 'cashier', // 'cashier' | 'waiter'
 }
 
 // Helper: recalculate table status based on its orderIds
@@ -62,10 +64,14 @@ function reducer(state, action) {
       return { ...state, language: action.payload }
     case 'SET_SHOP_NAME':
       return { ...state, shopName: action.payload }
+    case 'SET_STORE_ID':
+      return { ...state, storeId: action.payload }
     case 'SET_TAX_RATE':
       return { ...state, taxRate: action.payload }
     case 'SET_COOKING_PRICES':
       return { ...state, cookingMethodPrices: { ...state.cookingMethodPrices, ...action.payload } }
+    case 'SET_DEVICE_ROLE':
+      return { ...state, deviceRole: action.payload }
 
     case 'SET_TABLE_COUNT': {
       const newCount = action.payload
@@ -200,6 +206,22 @@ function reducer(state, action) {
         ),
       }
 
+    case 'UPDATE_ITEMS_KDS_STATUS': {
+      const { orderId, itemIds, status } = action.payload
+      const order = state.orders[orderId]
+      if (!order) return state
+      return {
+        ...state,
+        orders: {
+          ...state.orders,
+          [orderId]: {
+            ...order,
+            items: order.items.map(i => itemIds.includes(i.id) ? { ...i, kdsStatus: status } : i),
+          },
+        },
+      }
+    }
+
     case 'CLEAR_PAID_TABLE':
       return {
         ...state,
@@ -272,6 +294,20 @@ export function AppProvider({ children }) {
   useEffect(() => {
     try { localStorage.setItem(STORAGE_KEY, JSON.stringify(state)) } catch (e) {}
   }, [state])
+
+  // Cross-tab sync: when another tab updates localStorage, reload state
+  useEffect(() => {
+    const handleStorage = (e) => {
+      if (e.key === STORAGE_KEY && e.newValue) {
+        try {
+          const parsed = JSON.parse(e.newValue)
+          dispatch({ type: 'LOAD_STATE', payload: parsed })
+        } catch (_) {}
+      }
+    }
+    window.addEventListener('storage', handleStorage)
+    return () => window.removeEventListener('storage', handleStorage)
+  }, [])
 
   // Auto clear paid tables after 5s
   useEffect(() => {

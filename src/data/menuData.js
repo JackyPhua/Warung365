@@ -1,6 +1,11 @@
 // src/data/menuData.js
 import { v4 as uuidv4 } from 'uuid'
 
+export const DEPARTMENTS = [
+  { id: 'food', label: { zh: '食物部', en: 'Food', ms: 'Makanan' }, icon: '🍳', color: '#E53935' },
+  { id: 'beverage', label: { zh: '饮料部', en: 'Beverage', ms: 'Minuman' }, icon: '🥤', color: '#2196F3' },
+]
+
 export const COOKING_METHODS = [
   { id: 'dine_in', key: 'dineIn', default: 0 },
   { id: 'takeaway', key: 'takeaway', default: 0.5 },
@@ -47,7 +52,7 @@ export function getDefaultMenu() {
     {
       id: uuidv4(),
       name: { zh: '面食', en: 'Noodles', ms: 'Mee' },
-      icon: '🍜', color: '#FF6B35',
+      icon: '🍜', color: '#FF6B35', department: 'food',
       items: [
         {
           id: uuidv4(), type: 'multi',
@@ -104,7 +109,7 @@ export function getDefaultMenu() {
     {
       id: uuidv4(),
       name: { zh: '饭类', en: 'Rice', ms: 'Nasi' },
-      icon: '🍚', color: '#4CAF50',
+      icon: '🍚', color: '#4CAF50', department: 'food',
       items: [
         {
           id: uuidv4(), type: 'portion',
@@ -145,7 +150,7 @@ export function getDefaultMenu() {
     {
       id: uuidv4(),
       name: { zh: '饮料', en: 'Drinks', ms: 'Minuman' },
-      icon: '🥤', color: '#2196F3',
+      icon: '🥤', color: '#2196F3', department: 'beverage',
       items: [
         {
           id: uuidv4(), type: 'multi',
@@ -239,7 +244,7 @@ export function getDefaultMenu() {
     {
       id: uuidv4(),
       name: { zh: '小吃', en: 'Snacks', ms: 'Snek' },
-      icon: '🥨', color: '#FF9800',
+      icon: '🥨', color: '#FF9800', department: 'food',
       items: [
         { id: uuidv4(), type: 'simple', name: { zh: '虾饼', en: 'Prawn Fritter', ms: 'Cucur Udang' }, price: 4.0 },
         { id: uuidv4(), type: 'simple', name: { zh: '薄饼', en: 'Popiah', ms: 'Popiah' }, price: 3.5 },

@@ -48,13 +48,14 @@ export default function MenuScreen({ tableId, orderId: existingOrderId, orderTyp
 
   const handleItemClick = (item) => {
     SoundService.tapSound()
-    if (item.type === 'simple') setTempItem({ name: getLocalizedName(item.name, lang), price: item.price })
-    else if (item.type === 'portion') setPendingItem(item)
-    else { setPendingItem(item); setGroup1Choice(null); setGroup2Choice(null) }
+    const dept = selectedCat?.department || 'food'
+    if (item.type === 'simple') setTempItem({ name: getLocalizedName(item.name, lang), price: item.price, department: dept })
+    else if (item.type === 'portion') setPendingItem({ ...item, _department: dept })
+    else { setPendingItem({ ...item, _department: dept }); setGroup1Choice(null); setGroup2Choice(null) }
   }
 
   const onPortionSelect = (p) => {
-    setTempItem({ name: `${getLocalizedName(pendingItem.name, lang)} (${getLocalizedName(p.name, lang)})`, price: p.price })
+    setTempItem({ name: `${getLocalizedName(pendingItem.name, lang)} (${getLocalizedName(p.name, lang)})`, price: p.price, department: pendingItem._department || 'food' })
     setPendingItem(null)
   }
 
@@ -64,6 +65,7 @@ export default function MenuScreen({ tableId, orderId: existingOrderId, orderTyp
     setTempItem({
       name: `${getLocalizedName(pendingItem.name, lang)} (${getLocalizedName(group1Choice.name, lang)}, ${getLocalizedName(group2Choice.name, lang)})`,
       price: finalPrice,
+      department: pendingItem._department || 'food',
     })
     setPendingItem(null); setGroup1Choice(null); setGroup2Choice(null)
   }
@@ -73,6 +75,8 @@ export default function MenuScreen({ tableId, orderId: existingOrderId, orderTyp
       name: `${tempItem.name} [${t(method.key)}]`,
       price: tempItem.price + (state.cookingMethodPrices[method.id] || 0),
       qty: 1, method: method.id,
+      department: tempItem.department || 'food',
+      kdsStatus: 'pending',
     })
     setTempItem(null)
   }

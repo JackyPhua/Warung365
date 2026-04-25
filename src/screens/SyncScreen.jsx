@@ -2,11 +2,12 @@
 import React, { useState, useEffect } from 'react'
 import QRCode from 'qrcode'
 import { useApp } from '../context/AppContext'
-import SyncService from '../services/SyncService'
+import DispatchService from '../services/DispatchService'
 
 export default function SyncScreen({ onNavigate }) {
   const { state, dispatch, t } = useApp()
-  const [mode, setMode] = useState(state.serverMode || 'main')
+  const normalizedMode = state.serverMode === 'sub' ? 'worker' : (state.serverMode || 'main')
+  const [mode, setMode] = useState(normalizedMode)
   const [isServerRunning, setIsServerRunning] = useState(false)
   const [isClientConnected, setIsClientConnected] = useState(false)
   const [subIp, setSubIp] = useState('')
@@ -15,20 +16,23 @@ export default function SyncScreen({ onNavigate }) {
 
   useEffect(() => {
     if (isServerRunning && localIp) {
-      const data = JSON.stringify({ ip: localIp, port: 8765, shop: state.shopName })
+      const data = JSON.stringify(DispatchService.getJoinPayload({ shopName: state.shopName, storeId: state.storeId }))
       QRCode.toDataURL(data, {
         width: 240,
         color: { dark: '#6B21A8', light: '#FFFFFF' },
       }).then(setQrDataUrl)
     }
-  }, [isServerRunning, localIp, state.shopName])
+  }, [isServerRunning, localIp, state.shopName, state.storeId])
 
   const startMain = async () => {
     try {
-      const ip = await SyncService.startServer(list => {
-        dispatch({ type: 'SET_CONNECTED_CLIENTS', payload: list })
+      const r = await DispatchService.startHost({
+        shopName: state.shopName,
+        storeId: state.storeId,
+        onWorkers: (list) => dispatch({ type: 'SET_CONNECTED_CLIENTS', payload: list.map(w => `${w.name} (${w.remoteAddress})`) }),
       })
-      setLocalIp(ip)
+      // Keep UI compatible: show fixed GO gateway in native, or demo IP in web.
+      setLocalIp(DispatchService.isNative ? '192.168.49.1' : '192.168.1.100')
       setIsServerRunning(true)
       dispatch({ type: 'SET_SERVER_MODE', payload: 'main' })
     } catch (e) {
@@ -37,24 +41,14 @@ export default function SyncScreen({ onNavigate }) {
   }
 
   const stopMain = () => {
-    SyncService.stopServer()
+    DispatchService.stop()
     setIsServerRunning(false)
     dispatch({ type: 'SET_CONNECTED_CLIENTS', payload: [] })
   }
 
-  const connectSub = () => {
-    if (!subIp) { alert('⚠️ Enter server IP'); return }
-    SyncService.connectToServer(
-      subIp,
-      (syncedState) => dispatch({ type: 'LOAD_STATE', payload: syncedState }),
-      () => setIsClientConnected(true),
-      () => setIsClientConnected(false),
-    )
-    dispatch({ type: 'SET_SERVER_MODE', payload: 'sub' })
-  }
-
-  const disconnectSub = () => {
-    SyncService.disconnectFromServer()
+  const connectWorker = () => onNavigate('workerJoin')
+  const disconnectWorker = async () => {
+    await DispatchService.stop()
     setIsClientConnected(false)
   }
 
@@ -99,7 +93,7 @@ export default function SyncScreen({ onNavigate }) {
         {mode === 'main' ? (
           <div style={styles.section}>
             <div style={styles.sectionTitle}>🖥️ {t('mainDevice')}</div>
-            <div style={styles.desc}>主机 (平板) 当服务器，手机扫码连接</div>
+            <div style={styles.desc}>主机 (平板) 当服务器，工人手机扫码入场开始接单</div>
 
             {!isServerRunning ? (
               <button style={styles.primaryBtn} onClick={startMain}>▶ Start Server</button>
@@ -142,32 +136,24 @@ export default function SyncScreen({ onNavigate }) {
           </div>
         ) : (
           <div style={styles.section}>
-            <div style={styles.sectionTitle}>📱 {t('subDevice')}</div>
-            <div style={styles.desc}>手机作点单机，扫主机 QR 码或手动输入 IP</div>
-
-            <label style={styles.label}>Server IP</label>
-            <input
-              style={styles.input}
-              value={subIp}
-              onChange={e => setSubIp(e.target.value)}
-              placeholder="192.168.x.x"
-            />
+            <div style={styles.sectionTitle}>📱 工人手机</div>
+            <div style={styles.desc}>扫码主机入场码 → 自动连接 → 进入接单页面</div>
 
             {!isClientConnected ? (
               <button
                 style={{ ...styles.primaryBtn, background: 'var(--grad-gold)', color: 'var(--primary-dark)', boxShadow: 'var(--shadow-gold)' }}
-                onClick={connectSub}
+                onClick={connectWorker}
               >
-                🔗 Connect
+                📷 扫码入场
               </button>
             ) : (
               <>
                 <div style={styles.statusBox}>
                   <div style={{ color: 'var(--success)', fontSize: 14, fontWeight: 700 }}>
-                    ● {t('connected')} → {subIp}
+                    ● {t('connected')}
                   </div>
                 </div>
-                <button style={styles.dangerBtn} onClick={disconnectSub}>✂ Disconnect</button>
+                <button style={styles.dangerBtn} onClick={disconnectWorker}>✂ Disconnect</button>
               </>
             )}
           </div>

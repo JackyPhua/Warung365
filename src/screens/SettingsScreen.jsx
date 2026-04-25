@@ -12,9 +12,12 @@ export default function SettingsScreen({ onNavigate }) {
   const [devPassword, setDevPassword] = useState('')
   const [devError, setDevError] = useState('')
   const [shopName, setShopName] = useState(state.shopName)
+  const [storeId, setStoreId] = useState(state.storeId || '')
   const [licenseKey, setLicenseKey] = useState('')
   const [cookingPrices, setCookingPrices] = useState({ ...state.cookingMethodPrices })
   const [tableCount, setTableCount] = useState(state.tableCount)
+  const [showImportConfig, setShowImportConfig] = useState(false)
+  const [importText, setImportText] = useState('')
 
   const langs = [
     { id: 'zh', label: '中文', flag: '🇨🇳' },
@@ -42,6 +45,36 @@ export default function SettingsScreen({ onNavigate }) {
     } else alert(`❌ Invalid key`)
   }
 
+  const importConfig = () => {
+    const raw = (importText || '').trim()
+    if (!raw) { alert('⚠️ Empty'); return }
+    try {
+      const parsed = JSON.parse(raw)
+      const nextStoreId = String(parsed.storeId ?? parsed.shopId ?? parsed.store_id ?? '').trim()
+      const nextShopName = String(parsed.shopName ?? parsed.shop ?? '').trim()
+
+      if (nextStoreId) {
+        dispatch({ type: 'SET_STORE_ID', payload: nextStoreId })
+        setStoreId(nextStoreId)
+      }
+      if (nextShopName) {
+        dispatch({ type: 'SET_SHOP_NAME', payload: nextShopName })
+        setShopName(nextShopName)
+      }
+
+      if (!nextStoreId && !nextShopName) {
+        alert('⚠️ No storeId/shopName in JSON')
+        return
+      }
+
+      setShowImportConfig(false)
+      setImportText('')
+      alert('✅')
+    } catch (e) {
+      alert('JSON error: ' + e.message)
+    }
+  }
+
   return (
     <div style={S.container}>
       <div style={S.header}>
@@ -51,6 +84,34 @@ export default function SettingsScreen({ onNavigate }) {
       </div>
 
       <div style={S.scroll}>
+        {/* Device Role - everyone can change this */}
+        <Section title={t('deviceRole')} icon="👤">
+          <div style={{ display: 'flex', gap: 10 }}>
+            {[
+              { id: 'cashier', label: t('cashierRole'), desc: t('cashierDesc'), icon: '💰' },
+              { id: 'waiter', label: t('waiterRole'), desc: t('waiterDesc'), icon: '🍽️' },
+            ].map(role => {
+              const active = state.deviceRole === role.id
+              return (
+                <button key={role.id} onClick={() => dispatch({ type: 'SET_DEVICE_ROLE', payload: role.id })} style={{
+                  flex: 1, padding: 16, borderRadius: 14, textAlign: 'center',
+                  border: active ? '2px solid var(--primary)' : '2px solid var(--border)',
+                  background: active ? 'var(--primary-light)' : 'var(--bg-lighter)',
+                  transition: 'all 0.15s',
+                }}>
+                  <div style={{ fontSize: 28 }}>{role.icon}</div>
+                  <div style={{ fontSize: 15, fontWeight: 800, color: active ? 'var(--primary)' : 'var(--text)', marginTop: 6 }}>
+                    {role.label}
+                  </div>
+                  <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 4, lineHeight: 1.4 }}>
+                    {role.desc}
+                  </div>
+                </button>
+              )
+            })}
+          </div>
+        </Section>
+
         {/* License - everyone sees this */}
         <Section title={t('license')} icon="🔑">
           <div style={S.statusBox}>
@@ -97,6 +158,19 @@ export default function SettingsScreen({ onNavigate }) {
                 <input style={S.input} value={shopName} onChange={e => setShopName(e.target.value)} />
                 <button style={S.saveBtn} onClick={() => { dispatch({ type: 'SET_SHOP_NAME', payload: shopName }); alert('✅') }}>{t('save')}</button>
               </div>
+            </Section>
+
+            <Section title={t('storeId')} icon="🆔">
+              <div style={{ color: 'var(--text-muted)', fontSize: 12, marginBottom: 10 }}>
+                {t('storeIdHint')}
+              </div>
+              <div style={S.inputRow}>
+                <input style={S.input} value={storeId} onChange={e => setStoreId(e.target.value)} placeholder="STORE-001" />
+                <button style={S.saveBtn} onClick={() => { dispatch({ type: 'SET_STORE_ID', payload: storeId.trim() }); alert('✅') }}>{t('save')}</button>
+              </div>
+              <button style={{ ...S.flexBtn, marginTop: 10 }} onClick={() => { setShowImportConfig(true); setImportText('') }}>
+                📥 {t('importConfig')}
+              </button>
             </Section>
 
             <Section title={t('language')} icon="🌐">
@@ -174,6 +248,30 @@ export default function SettingsScreen({ onNavigate }) {
           </>
         )}
       </div>
+
+      {showImportConfig && (
+        <div onClick={() => setShowImportConfig(false)} style={M.overlay}>
+          <div onClick={e => e.stopPropagation()} style={M.box}>
+            <h3 style={{ color: 'var(--primary)', fontSize: 16, margin: '0 0 12px', textAlign: 'center', fontWeight: 700 }}>
+              📥 {t('importConfig')}
+            </h3>
+            <div style={{ color: 'var(--text-muted)', fontSize: 12, lineHeight: 1.6, marginBottom: 10 }}>
+              {t('importConfigHint')}
+            </div>
+            <textarea
+              style={M.textarea}
+              value={importText}
+              onChange={e => setImportText(e.target.value)}
+              placeholder={'{\n  "storeId": "STORE-001",\n  "shopName": "Warung365"\n}'}
+              rows={6}
+            />
+            <div style={{ display: 'flex', gap: 10, marginTop: 12 }}>
+              <button style={M.cancelBtn} onClick={() => setShowImportConfig(false)}>{t('cancel')}</button>
+              <button style={M.importBtn} onClick={importConfig}>✓ {t('import')}</button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
@@ -238,5 +336,37 @@ const S = {
   flexBtn: {
     flex: 1, background: 'var(--bg-lighter)', border: '1px solid var(--border)',
     color: 'var(--text)', padding: 12, borderRadius: 10, fontSize: 13, fontWeight: 600,
+  },
+}
+
+const M = {
+  overlay: {
+    position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.55)',
+    display: 'flex', alignItems: 'flex-end', justifyContent: 'center', zIndex: 200, animation: 'fadeIn 0.15s',
+  },
+  box: {
+    width: '100%', maxWidth: 520, background: 'var(--bg-card)',
+    borderRadius: '20px 20px 0 0', padding: 18, animation: 'slideUp 0.25s',
+    borderTop: '3px solid var(--primary)',
+  },
+  textarea: {
+    width: '100%',
+    background: 'var(--bg-input)',
+    border: '1px solid var(--border)',
+    borderRadius: 12,
+    padding: '12px 12px',
+    fontSize: 13,
+    color: 'var(--text)',
+    boxSizing: 'border-box',
+    resize: 'vertical',
+    fontFamily: "'Courier New', Courier, monospace",
+  },
+  cancelBtn: {
+    flex: 1, padding: 12, background: 'var(--bg-lighter)', border: '1px solid var(--border)',
+    color: 'var(--text)', borderRadius: 10, fontSize: 14,
+  },
+  importBtn: {
+    flex: 1, padding: 12, background: 'var(--grad-primary)', color: '#FFFFFF',
+    borderRadius: 10, fontSize: 14, fontWeight: 700,
   },
 }

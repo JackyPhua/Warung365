@@ -1,6 +1,7 @@
 // src/screens/TableScreen.jsx
-import React, { useState } from 'react'
+import React, { useState, useMemo, useEffect, useRef } from 'react'
 import { useApp, TABLE_STATUS } from '../context/AppContext'
+import SoundService from '../services/SoundService'
 
 const TABLE_STYLES = {
   [TABLE_STATUS.EMPTY]: { bg: 'var(--bg-card)', border: 'var(--border)', numColor: 'var(--text)', labelColor: 'var(--text-muted)' },
@@ -10,8 +11,9 @@ const TABLE_STYLES = {
 }
 
 export default function TableScreen({ onNavigate }) {
-  const { state, t, isLicenseValid, getLicenseDaysLeft, getTableOrders, getTableTotal } = useApp()
+  const { state, dispatch, t, isLicenseValid, getLicenseDaysLeft, getTableOrders, getTableTotal } = useApp()
   const [showOrderPicker, setShowOrderPicker] = useState(null)
+  const prevReadyCountRef = useRef(0)
 
   const handleTableClick = (table) => {
     if (!isLicenseValid()) { alert(t('license') + ' ' + t('expired')); return }
@@ -65,6 +67,52 @@ export default function TableScreen({ onNavigate }) {
   )
   const todayRevenue = todayOrders.reduce((s, o) => s + ((o.payment?.received || 0) - (o.payment?.change || 0)), 0)
 
+  // Build list of orders ready to serve (all items ready, none served/pending)
+  const readyToServeOrders = useMemo(() => {
+    const list = []
+    Object.values(state.orders).forEach(order => {
+      if (!order.items.length) return
+      const hasKds = order.items.some(i => i.kdsStatus)
+      if (!hasKds) return
+      const allReady = order.items.every(i => i.kdsStatus === 'ready')
+      if (allReady) {
+        list.push({
+          orderId: order.id,
+          tableId: order.tableId,
+          type: order.type,
+          createdAt: order.createdAt,
+          items: order.items,
+          itemSummary: order.items.map(i => i.name.split(' [')[0]).join(', '),
+        })
+      }
+    })
+    list.sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt))
+    return list
+  }, [state.orders])
+
+  const readyTableIds = useMemo(() => {
+    const ids = new Set()
+    readyToServeOrders.forEach(o => { if (o.tableId > 0) ids.add(o.tableId) })
+    return ids
+  }, [readyToServeOrders])
+
+  // Sound alert when new ready-to-serve orders appear
+  useEffect(() => {
+    const count = readyToServeOrders.length
+    if (count > prevReadyCountRef.current && prevReadyCountRef.current !== -1) {
+      SoundService.notifySound()
+    }
+    prevReadyCountRef.current = count
+  }, [readyToServeOrders])
+
+  const handleServe = (orderId) => {
+    const order = state.orders[orderId]
+    if (!order) return
+    const itemIds = order.items.map(i => i.id)
+    dispatch({ type: 'UPDATE_ITEMS_KDS_STATUS', payload: { orderId, itemIds, status: 'served' } })
+    SoundService.tapSound()
+  }
+
   const pickerTable = showOrderPicker ? state.tables.find(t => t.id === showOrderPicker) : null
   const pickerOrders = showOrderPicker ? getTableOrders(showOrderPicker) : []
 
@@ -92,6 +140,8 @@ export default function TableScreen({ onNavigate }) {
           }}>
             {isLicenseValid() ? `🔑 ${licenseText}` : `⚠️ ${t('expired')}`}
           </div>
+          <button style={styles.kdsBtn} onClick={() => onNavigate('demo')}>🎬 Demo</button>
+          <button style={styles.kdsBtn} onClick={() => onNavigate('kds')}>📺 KDS</button>
           <button style={styles.iconBtn} onClick={() => onNavigate('sync')}>📡</button>
           <button style={styles.iconBtn} onClick={() => onNavigate('reports')}>📊</button>
           <button style={styles.iconBtn} onClick={() => onNavigate('settings')}>⚙️</button>
@@ -135,6 +185,9 @@ export default function TableScreen({ onNavigate }) {
                     }
                   </div>
                 )}
+                {readyTableIds.has(table.id) && (
+                  <div style={styles.readyBadge}>✅</div>
+                )}
               </button>
             )
           })}
@@ -142,9 +195,41 @@ export default function TableScreen({ onNavigate }) {
       </div>
 
       {/* FAB */}
-      <button style={styles.fab} onClick={() => onNavigate('menu', { tableId: 0, orderType: 'takeaway' })}>
+      <button style={{
+        ...styles.fab,
+        bottom: readyToServeOrders.length > 0 ? 100 : 20,
+      }} onClick={() => onNavigate('menu', { tableId: 0, orderType: 'takeaway' })}>
         📦 {t('takeaway')}
       </button>
+
+      {/* Ready to Serve notification panel */}
+      {readyToServeOrders.length > 0 && (
+        <div style={notifyStyles.panel}>
+          <div style={notifyStyles.header}>
+            <span style={notifyStyles.headerIcon}>🔔</span>
+            <span style={notifyStyles.headerText}>
+              {readyToServeOrders.length} {t('deliveryCount')}
+            </span>
+          </div>
+          <div style={notifyStyles.list}>
+            {readyToServeOrders.map(o => (
+              <div key={o.orderId} style={notifyStyles.item}>
+                <div style={notifyStyles.itemInfo}>
+                  <div style={notifyStyles.itemTable}>
+                    {o.tableId === 0 ? `📦 ${t('takeaway')}` : `🪑 ${t('tableNo')} ${o.tableId}`}
+                  </div>
+                  <div style={notifyStyles.itemSummary}>
+                    {o.items.length} {t('itemOf')} · {o.itemSummary.length > 35 ? o.itemSummary.slice(0, 35) + '...' : o.itemSummary}
+                  </div>
+                </div>
+                <button style={notifyStyles.serveBtn} onClick={() => handleServe(o.orderId)}>
+                  🚀 {t('serve')}
+                </button>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* Order Picker Modal */}
       {showOrderPicker && pickerTable && (
@@ -233,6 +318,43 @@ function LegendItem({ color, borderColor, label }) {
   )
 }
 
+const notifyStyles = {
+  panel: {
+    position: 'absolute', bottom: 0, left: 0, right: 0,
+    background: 'var(--bg-card)', borderTop: '3px solid #16A34A',
+    boxShadow: '0 -4px 20px rgba(0,0,0,0.12)',
+    animation: 'slideUp 0.3s', zIndex: 50,
+    maxHeight: '35vh', overflow: 'auto',
+  },
+  header: {
+    display: 'flex', alignItems: 'center', gap: 8,
+    padding: '10px 16px', background: '#DCFCE7',
+    borderBottom: '1px solid #BBF7D0',
+  },
+  headerIcon: { fontSize: 18 },
+  headerText: { fontSize: 14, fontWeight: 700, color: '#15803D' },
+  list: { padding: '6px 12px' },
+  item: {
+    display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+    padding: '10px 12px', borderRadius: 12, marginBottom: 6,
+    background: 'var(--bg-lighter)', border: '1px solid var(--border)',
+    gap: 10,
+  },
+  itemInfo: { flex: 1, minWidth: 0 },
+  itemTable: { fontSize: 14, fontWeight: 700, color: 'var(--text)' },
+  itemSummary: {
+    fontSize: 11, color: 'var(--text-muted)', marginTop: 2,
+    whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
+  },
+  serveBtn: {
+    background: 'linear-gradient(135deg, #16A34A, #15803D)',
+    color: '#FFFFFF', padding: '10px 18px', borderRadius: 10,
+    fontSize: 14, fontWeight: 800, whiteSpace: 'nowrap',
+    boxShadow: '0 2px 8px rgba(22,163,74,0.3)',
+    flexShrink: 0,
+  },
+}
+
 const pickerStyles = {
   overlay: {
     position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)',
@@ -290,6 +412,11 @@ const styles = {
     background: 'rgba(255,255,255,0.15)', border: '1px solid rgba(255,255,255,0.25)',
     borderRadius: 10, padding: '10px 12px', fontSize: 18, color: '#FFFFFF',
   },
+  kdsBtn: {
+    background: 'rgba(255,255,255,0.2)', border: '1px solid rgba(255,255,255,0.35)',
+    borderRadius: 10, padding: '10px 14px', fontSize: 13, fontWeight: 700,
+    color: '#FFFFFF',
+  },
   statsBar: {
     display: 'flex', gap: 10, padding: '12px 18px',
     background: 'var(--bg-card)', borderBottom: '1px solid var(--border)', overflowX: 'auto',
@@ -314,6 +441,10 @@ const styles = {
     minWidth: 24, height: 24, borderRadius: 12, padding: '0 6px',
     display: 'flex', alignItems: 'center', justifyContent: 'center',
     fontSize: 11, fontWeight: 800,
+  },
+  readyBadge: {
+    position: 'absolute', bottom: 6, right: 6,
+    fontSize: 16,
   },
   fab: {
     position: 'absolute', bottom: 20, right: 20,

@@ -130,7 +130,7 @@ class PrinterService {
     await this._sendBuffer(buf)
   }
 
-  async printKitchenTicket({ shopName, tableId, order, t }) {
+  async printKitchenTicket({ shopName, storeId, tableId, order, t }) {
     const now = new Date()
     const timeStr = `${now.getHours().toString().padStart(2,'0')}:${now.getMinutes().toString().padStart(2,'0')}`
 
@@ -139,6 +139,7 @@ class PrinterService {
       this._bytes('*** KITCHEN ***\n'),
       this._SIZE_NORMAL, this._ALIGN_LEFT,
       this._bytes('--------------------------------\n'),
+      ...(storeId ? [this._bytes(`ID: ${storeId}\n`)] : []),
       this._bytes(`${t('tableNo')}: ${tableId || 'T/A'}   ${timeStr}\n`),
       this._bytes(`${order.type === 'takeaway' ? t('takeaway') : t('dineIn')}\n`),
       this._bytes('--------------------------------\n'),
@@ -157,7 +158,7 @@ class PrinterService {
     await this._sendBuffer(this._concat(...parts))
   }
 
-  async printReceipt({ shopName, tableId, order, payment, t }) {
+  async printReceipt({ shopName, storeId, tableId, order, payment, t }) {
     const subtotal = order.items.reduce((s, i) => s + i.price * i.qty, 0)
     const total = subtotal
     const change = payment.received - total
@@ -170,6 +171,7 @@ class PrinterService {
       this._bytes(shopName + '\n'),
       this._SIZE_NORMAL, this._ALIGN_LEFT,
       this._bytes('--------------------------------\n'),
+      ...(storeId ? [this._bytes(`ID: ${storeId}\n`)] : []),
       this._bytes(`${dateStr}  ${timeStr}\n`),
       this._bytes(`${t('tableNo')}: ${tableId || 'T/A'}\n`),
       this._bytes(`#${order.id.substring(0, 8).toUpperCase()}\n`),

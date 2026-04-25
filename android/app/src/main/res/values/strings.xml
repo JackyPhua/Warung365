@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">Warung365</string>
+    <string name="title_activity_main">Warung365</string>
+    <string name="package_name">com.warung365.pos</string>
+    <string name="custom_url_scheme">com.warung365.pos</string>
+</resources>

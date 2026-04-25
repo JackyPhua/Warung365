@@ -84,6 +84,7 @@ export default function ReportsScreen({ onNavigate }) {
   const exportJSON = () => {
     const data = {
       shopName: state.shopName,
+      storeId: state.storeId,
       exportDate: new Date().toISOString(),
       completedOrders: state.completedOrders,
       menu: state.menu,

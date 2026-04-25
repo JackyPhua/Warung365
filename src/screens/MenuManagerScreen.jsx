@@ -3,7 +3,7 @@ import React, { useState } from 'react'
 import { v4 as uuidv4 } from 'uuid'
 import { useApp } from '../context/AppContext'
 import {
-  CATEGORY_ICONS, CATEGORY_COLORS, ITEM_TYPES,
+  CATEGORY_ICONS, CATEGORY_COLORS, ITEM_TYPES, DEPARTMENTS,
   getLocalizedName, getDefaultMenu,
 } from '../data/menuData'
 
@@ -32,6 +32,7 @@ const MANAGER_T = {
     copied: '已复制', items: '项',
     placeholderName: '例: 面食', placeholderItem: '例: 云吞面',
     portionName: '份量名',
+    department: '所属部门',
   },
   en: {
     title: 'Menu Manager', back: 'Back',
@@ -56,6 +57,7 @@ const MANAGER_T = {
     copied: 'Copied', items: 'items',
     placeholderName: 'e.g. Noodles', placeholderItem: 'e.g. Wanton Mee',
     portionName: 'Portion name',
+    department: 'Department',
   },
   ms: {
     title: 'Pengurus Menu', back: 'Kembali',
@@ -80,6 +82,7 @@ const MANAGER_T = {
     copied: 'Disalin', items: 'item',
     placeholderName: 'cth: Mee', placeholderItem: 'cth: Mee Wantan',
     portionName: 'Nama saiz',
+    department: 'Jabatan',
   },
 }
 
@@ -237,6 +240,7 @@ function CategoryEditor({ category, lang, mt, onSave, onClose }) {
   const [nameMs, setNameMs] = useState(category?.name?.ms || '')
   const [icon, setIcon] = useState(category?.icon || '🍜')
   const [color, setColor] = useState(category?.color || '#FF6B35')
+  const [department, setDepartment] = useState(category?.department || 'food')
   const [showAllLangs, setShowAllLangs] = useState(!!(category?.name?.en || category?.name?.ms))
 
   const handleSave = () => {
@@ -246,7 +250,7 @@ function CategoryEditor({ category, lang, mt, onSave, onClose }) {
     if (nameMs.trim()) name.ms = nameMs.trim()
     onSave({
       id: category?.id || uuidv4(),
-      name, icon, color,
+      name, icon, color, department,
       items: category?.items || [],
     })
   }
@@ -305,6 +309,26 @@ function CategoryEditor({ category, lang, mt, onSave, onClose }) {
             onClick={() => setColor(c.value)}
             title={c.name}
           />
+        ))}
+      </div>
+
+      <label style={styles.label}>{mt('department')}</label>
+      <div style={{ display: 'flex', gap: 8, marginTop: 4 }}>
+        {DEPARTMENTS.map(d => (
+          <button
+            key={d.id}
+            style={{
+              flex: 1, padding: 12, borderRadius: 10, textAlign: 'center',
+              border: '2px solid',
+              background: department === d.id ? d.color : 'var(--bg)',
+              color: department === d.id ? '#FFFFFF' : 'var(--text)',
+              borderColor: department === d.id ? d.color : 'var(--border)',
+              fontWeight: 700, fontSize: 14,
+            }}
+            onClick={() => setDepartment(d.id)}
+          >
+            {d.icon} {getLocalizedName(d.label, lang)}
+          </button>
         ))}
       </div>
 
