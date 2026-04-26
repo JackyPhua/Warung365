@@ -277,8 +277,10 @@ public class WifiDirectPlugin extends Plugin {
         notifyListeners("serverStarted", ret);
 
         while (!ss.isClosed()) {
-          try {
+            try {
             Socket s = ss.accept();
+            s.setKeepAlive(true);
+            s.setTcpNoDelay(true);
             serverClients.add(s);
             notifyListeners("clientConnected", socketInfo(s));
             startServerReadLoop(s);
@@ -321,6 +323,8 @@ public class WifiDirectPlugin extends Plugin {
       for (int attempt = 1; attempt <= maxRetries; attempt++) {
         try {
           Socket s = new Socket(finalHost, port);
+          s.setKeepAlive(true);
+          s.setTcpNoDelay(true);
           clientSocket = s;
           clientOut = new DataOutputStream(new BufferedOutputStream(s.getOutputStream()));
           clientIn = new DataInputStream(new BufferedInputStream(s.getInputStream()));

@@ -8,6 +8,19 @@ import SoundService from '../services/SoundService'
 
 const AppContext = createContext(null)
 
+// Helper to build the broadcast payload (strips large/device-specific fields)
+function makeBroadcastPayload(state) {
+  const {
+    serverMode, hostRunning, hostIp, joinJson, connectedClients, deviceRole,
+    menu, completedOrders, ...sharedState
+  } = state
+  const tenMinAgo = Date.now() - 10 * 60 * 1000
+  const recentCheckedOutIds = (completedOrders || [])
+    .filter(o => o.completedAt && new Date(o.completedAt).getTime() > tenMinAgo)
+    .map(o => o.id)
+  return { ...sharedState, recentCheckedOutIds }
+}
+
 export const TABLE_STATUS = {
   EMPTY: 'empty',
   OCCUPIED: 'occupied',
@@ -16,7 +29,7 @@ export const TABLE_STATUS = {
 }
 
 const initialState = {
-  language: 'zh',
+  language: 'en',
   shopName: 'Warung365',
   storeId: '',
   taxRate: 0,
@@ -334,6 +347,8 @@ const STORAGE_KEY = 'pos_state_v3'
 export function AppProvider({ children }) {
   const [state, dispatch] = useReducer(reducer, initialState)
   const isWorker = state.serverMode === 'sub'
+  // Always-current state ref for use in setInterval callbacks (avoids stale closures)
+  const stateRef = useRef(state)
   // Prevent sync loops: when state change is from network, skip re-sending
   const syncFromNetwork = useRef(false)
 
@@ -375,6 +390,7 @@ export function AppProvider({ children }) {
   }, [])
 
   useEffect(() => {
+    stateRef.current = state
     try { localStorage.setItem(STORAGE_KEY, JSON.stringify(state)) } catch (e) {}
   }, [state])
 
@@ -435,28 +451,27 @@ export function AppProvider({ children }) {
     }
   }, [isWorker])
 
-  // LAN sync: host broadcasts state to workers when it changes (debounced).
-  // Strip host-only and large fields. Send recentCheckedOutIds (IDs only, last 10min)
-  // instead of full completedOrders so workers can detect paid tables without a large payload.
+  // LAN sync: host broadcasts on every state change (debounced 200ms)
   useEffect(() => {
     if (!DispatchService.isNative) return
     if (isWorker) return
     if (DispatchService.mode !== 'host') return
     const id = setTimeout(() => {
-      const {
-        serverMode, hostRunning, hostIp, joinJson, connectedClients, deviceRole,
-        menu,           // workers have their own menu
-        completedOrders, // large; workers don't need full history
-        ...sharedState
-      } = state
-      const tenMinAgo = Date.now() - 10 * 60 * 1000
-      const recentCheckedOutIds = (completedOrders || [])
-        .filter(o => o.completedAt && new Date(o.completedAt).getTime() > tenMinAgo)
-        .map(o => o.id)
-      DispatchService.broadcastState({ ...sharedState, recentCheckedOutIds }).catch(() => {})
+      DispatchService.broadcastState(makeBroadcastPayload(state)).catch(() => {})
     }, 200)
     return () => clearTimeout(id)
   }, [state, isWorker])
+
+  // LAN sync: periodic broadcast every 5s — ensures workers recover from missed events
+  // or brief TCP disruptions (Android Doze mode can briefly pause sockets)
+  useEffect(() => {
+    if (!DispatchService.isNative) return
+    const id = setInterval(() => {
+      if (DispatchService.mode !== 'host') return
+      DispatchService.broadcastState(makeBroadcastPayload(stateRef.current)).catch(() => {})
+    }, 5000)
+    return () => clearInterval(id)
+  }, [])
 
   // Auto-clear readyNotifications after 30 s
   useEffect(() => {
