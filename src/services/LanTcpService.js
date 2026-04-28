@@ -1,6 +1,6 @@
-// src/services/WifiDirectService.js
-// Thin wrapper around the native Capacitor WifiDirect plugin (Android only).
-// Web mode: all methods return safe fallbacks so the app doesn't crash.
+// src/services/LanTcpService.js
+// Android: Capacitor LanTcp plugin — TCP sync on the shop Wi‑Fi (router LAN only).
+// Web: safe stubs so the app does not crash.
 
 import { registerPlugin } from '@capacitor/core'
 
@@ -9,7 +9,7 @@ let nativePlugin = null
 try {
   isNativeAndroid = window?.Capacitor?.getPlatform?.() === 'android' && window?.Capacitor?.isNativePlatform?.()
   if (isNativeAndroid) {
-    nativePlugin = registerPlugin('WifiDirect')
+    nativePlugin = registerPlugin('LanTcp')
   }
 } catch (e) {}
 
@@ -34,54 +34,14 @@ function getPlugin() {
   return nativePlugin
 }
 
-class WifiDirectService {
+class LanTcpService {
   get isSupported() {
     return isNativeAndroid && !!nativePlugin
-  }
-
-  async requestPermissions() {
-    if (!this.isSupported) return { granted: false }
-    return await getPlugin().requestPermissions()
-  }
-
-  async createGroupOwner() {
-    if (!this.isSupported) throw new Error('Not supported')
-    return await getPlugin().createGroupOwner()
-  }
-
-  async removeGroup() {
-    if (!this.isSupported) throw new Error('Not supported')
-    return await getPlugin().removeGroup()
-  }
-
-  async discoverPeers() {
-    if (!this.isSupported) throw new Error('Not supported')
-    return await getPlugin().discoverPeers()
-  }
-
-  async getPeers() {
-    if (!this.isSupported) return { peers: [] }
-    return await getPlugin().getPeers()
-  }
-
-  async getThisDevice() {
-    if (!this.isSupported) return { available: false }
-    return await getPlugin().getThisDevice()
   }
 
   async getLocalIp() {
     if (!this.isSupported) return { available: false }
     return await getPlugin().getLocalIp()
-  }
-
-  async connect(deviceAddress) {
-    if (!this.isSupported) throw new Error('Not supported')
-    return await getPlugin().connect({ deviceAddress })
-  }
-
-  async requestConnectionInfo() {
-    if (!this.isSupported) return { available: false }
-    return await getPlugin().requestConnectionInfo()
   }
 
   async startServer(port = 8765) {
@@ -129,4 +89,4 @@ class WifiDirectService {
   }
 }
 
-export default new WifiDirectService()
+export default new LanTcpService()

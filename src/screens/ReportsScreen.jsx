@@ -1,6 +1,7 @@
 // src/screens/ReportsScreen.jsx
 import React, { useState, useMemo } from 'react'
 import { useApp } from '../context/AppContext'
+import { shareOrDownloadJson } from '../utils/exportHelpers'
 
 export default function ReportsScreen({ onNavigate }) {
   const { state, dispatch, t } = useApp()
@@ -81,7 +82,7 @@ export default function ReportsScreen({ onNavigate }) {
   const current = tab === 'daily' ? daily : monthly
 
   // ── Export functions ──
-  const exportJSON = () => {
+  const exportJSON = async () => {
     const data = {
       shopName: state.shopName,
       storeId: state.storeId,
@@ -94,14 +95,11 @@ export default function ReportsScreen({ onNavigate }) {
         cookingMethodPrices: state.cookingMethodPrices,
       },
     }
-    const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' })
-    const url = URL.createObjectURL(blob)
-    const a = document.createElement('a')
-    a.href = url
-    a.download = `warung365_backup_${new Date().toISOString().slice(0, 10)}.json`
-    a.click()
-    URL.revokeObjectURL(url)
-    alert('✅ JSON exported!')
+    const filename = `warung365_backup_${new Date().toISOString().slice(0, 10)}.json`
+    const json = JSON.stringify(data, null, 2)
+    const mode = await shareOrDownloadJson(json, filename)
+    if (mode === 'aborted') return
+    alert(mode === 'download' ? `✅ ${t('exportDownloadOk')}` : `✅ ${t('exportShareOk')}`)
   }
 
   const exportCSV = () => {

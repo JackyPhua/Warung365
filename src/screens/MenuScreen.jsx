@@ -1,5 +1,5 @@
 // src/screens/MenuScreen.jsx
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, useRef } from 'react'
 import { v4 as uuidv4 } from 'uuid'
 import { useApp } from '../context/AppContext'
 import { COOKING_METHODS, getLocalizedName } from '../data/menuData'
@@ -16,6 +16,11 @@ export default function MenuScreen({ tableId, orderId: existingOrderId, orderTyp
   const [group2Choice, setGroup2Choice] = useState(null)
   const [tempItem, setTempItem] = useState(null)
 
+  const allowUnmountCancelRef = useRef(true)
+  const draftMetaRef = useRef({
+    orderId: null, tableId, isNewOrder, isEmpty: true,
+  })
+
   // Create order after first render (not during render)
   useEffect(() => {
     if (!activeOrderId) {
@@ -24,18 +29,45 @@ export default function MenuScreen({ tableId, orderId: existingOrderId, orderTyp
     }
   }, [])
 
+  // System back / route change without our "Back" button: drop empty draft orders
+  useEffect(() => () => {
+    if (!allowUnmountCancelRef.current) return
+    const { orderId, tableId: tid, isNewOrder: isNew, isEmpty } = draftMetaRef.current
+    if (!isNew || !orderId || !isEmpty) return
+    dispatch({ type: 'CANCEL_ORDER', payload: { orderId, tableId: tid } })
+  }, [dispatch])
+
+  const order = activeOrderId ? state.orders[activeOrderId] : null
+  draftMetaRef.current = {
+    orderId: activeOrderId,
+    tableId,
+    isNewOrder,
+    isEmpty: !(order?.items?.length),
+  }
+
+  // No items added for 10s → free the table (new menu session only)
+  const itemCount = order?.items?.length ?? 0
+  useEffect(() => {
+    if (!isNewOrder || !activeOrderId || itemCount > 0) return
+    const timer = setTimeout(() => {
+      allowUnmountCancelRef.current = false
+      dispatch({ type: 'CANCEL_ORDER', payload: { orderId: activeOrderId, tableId } })
+      onNavigate('tables')
+    }, 10000)
+    return () => clearTimeout(timer)
+  }, [isNewOrder, activeOrderId, itemCount, tableId, dispatch, onNavigate])
+
   // Back button: auto cancel empty new orders
   const handleBack = () => {
+    allowUnmountCancelRef.current = false
     if (activeOrderId) {
-      const order = state.orders[activeOrderId]
-      if (isNewOrder && order && order.items.length === 0) {
+      const ord = state.orders[activeOrderId]
+      if (isNewOrder && ord && ord.items.length === 0) {
         dispatch({ type: 'CANCEL_ORDER', payload: { orderId: activeOrderId, tableId } })
       }
     }
     onNavigate('tables')
   }
-
-  const order = activeOrderId ? state.orders[activeOrderId] : null
   const total = activeOrderId ? getOrderTotal(activeOrderId) : 0
   const lang = state.language
   const selectedCat = state.menu.find(c => c.id === selectedCatId) || state.menu[0]
@@ -107,7 +139,10 @@ export default function MenuScreen({ tableId, orderId: existingOrderId, orderTyp
         <div style={{ color: 'var(--primary)', fontSize: 16, fontWeight: 700 }}>
           {tableId === 0 ? `📦 ${t('takeaway')}` : `🪑 ${t('tableNo')} ${tableId}`}
         </div>
-        <button style={S.cartBtn} onClick={() => onNavigate('order', { orderId: activeOrderId, tableId })}>
+        <button style={S.cartBtn} onClick={() => {
+          allowUnmountCancelRef.current = false
+          onNavigate('order', { orderId: activeOrderId, tableId })
+        }}>
           🧾 {order?.items?.length || 0} · RM {total.toFixed(2)}
         </button>
       </div>

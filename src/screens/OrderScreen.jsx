@@ -19,6 +19,14 @@ export default function OrderScreen({ orderId, tableId, onNavigate }) {
   const total = getOrderTotal(orderId)
   const lang = state.language
 
+  const goBackToTables = () => {
+    const o = state.orders[orderId]
+    if (o && o.items.length === 0) {
+      dispatch({ type: 'CANCEL_ORDER', payload: { orderId, tableId } })
+    }
+    onNavigate('tables')
+  }
+
   if (!order) return (
     <div style={S.container}>
       <div style={S.header}>
@@ -96,7 +104,7 @@ export default function OrderScreen({ orderId, tableId, onNavigate }) {
   return (
     <div style={S.container}>
       <div style={S.header}>
-        <button style={S.backBtn} onClick={() => onNavigate('tables')}>← {t('back')}</button>
+        <button style={S.backBtn} onClick={goBackToTables}>← {t('back')}</button>
         <div style={{ color: 'var(--primary)', fontSize: 16, fontWeight: 700 }}>
           {tableId === 0 ? `📦 ${t('takeaway')}` : `🪑 ${t('tableNo')} ${tableId}`}
         </div>
@@ -243,6 +251,10 @@ function ReceiptPreview({ data, t, onClose }) {
             <span style={{ fontWeight: 800, fontSize: 16 }}>RM {subtotal.toFixed(2)}</span>
           </div>
           <div style={R.itemRow}>
+            <span>{t('paymentMethod')}</span>
+            <span>{payment.method === 'qr' ? t('payQR') : t('payCash')}</span>
+          </div>
+          <div style={R.itemRow}>
             <span>{t('received')}</span>
             <span>RM {payment.received.toFixed(2)}</span>
           </div>
@@ -299,6 +311,7 @@ const R = {
 
 // ═══ Checkout Modal ═══
 function CheckoutModal({ total, t, onConfirm, onClose }) {
+  const [payMode, setPayMode] = useState('select') // 'select' | 'qr' | 'cash'
   const [received, setReceived] = useState('0')
   const num = parseFloat(received) || 0
   const change = num - total
@@ -316,45 +329,103 @@ function CheckoutModal({ total, t, onConfirm, onClose }) {
     <div onClick={onClose} style={C.overlay}>
       <div onClick={e => e.stopPropagation()} style={C.box}>
         <h3 style={{ color: 'var(--primary)', fontSize: 18, margin: '0 0 14px', textAlign: 'center', fontWeight: 700 }}>
-          💵 {t('cash')}
+          💳 {t('checkout')}
         </h3>
-        <div style={C.totalBox}>
-          <span style={{ color: 'var(--text-light)' }}>{t('total')}</span>
-          <span style={{ color: 'var(--primary)', fontSize: 28, fontWeight: 800 }}>RM {total.toFixed(2)}</span>
-        </div>
-        <div style={C.quicks}>
-          {[10, 20, 50, 100].map(a => (
-            <button key={a} onClick={() => setReceived(a.toFixed(2))} style={C.quickBtn}>RM {a}</button>
-          ))}
-        </div>
-        <div style={C.receivedBox}>
-          <span style={{ color: 'var(--primary)', fontWeight: 600 }}>{t('received')}</span>
-          <span style={{ color: 'var(--text)', fontSize: 24, fontWeight: 700 }}>RM {parseFloat(received || 0).toFixed(2)}</span>
-        </div>
-        <div style={{
-          ...C.changeBox,
-          background: change < 0 ? 'var(--danger-light)' : 'var(--success-light)',
-          borderColor: change < 0 ? 'var(--danger)' : 'var(--success)',
-        }}>
-          <span style={{ color: change < 0 ? 'var(--danger)' : 'var(--success)', fontWeight: 600 }}>{t('change')}</span>
-          <span style={{ color: change < 0 ? 'var(--danger)' : 'var(--success)', fontSize: 24, fontWeight: 700 }}>
-            RM {change >= 0 ? change.toFixed(2) : '---'}
-          </span>
-        </div>
-        <div style={C.numpad}>
-          {['1','2','3','4','5','6','7','8','9','.','0','⌫'].map(key => (
-            <button key={key} onClick={() => handleKey(key)} style={{
-              ...C.numKey, ...(key === '⌫' ? { background: 'var(--danger-light)', color: 'var(--danger)' } : {}),
-            }}>{key}</button>
-          ))}
-        </div>
-        <div style={{ display: 'flex', gap: 10, marginTop: 8 }}>
-          <button onClick={onClose} style={C.cancelBtn}>{t('cancel')}</button>
-          <button onClick={() => change >= 0 && onConfirm({ received: num, change })}
-            disabled={change < 0} style={{ ...C.confirmBtn, opacity: change < 0 ? 0.3 : 1 }}>
-            ✓ {t('confirm')}
-          </button>
-        </div>
+
+        {payMode === 'select' && (
+          <>
+            <p style={{ textAlign: 'center', color: 'var(--text-muted)', fontSize: 14, margin: '0 0 16px' }}>{t('selectPayment')}</p>
+            <div style={C.totalBox}>
+              <span style={{ color: 'var(--text-light)' }}>{t('total')}</span>
+              <span style={{ color: 'var(--primary)', fontSize: 26, fontWeight: 800 }}>RM {total.toFixed(2)}</span>
+            </div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 12, marginTop: 8 }}>
+              <button type="button" style={C.methodBtnQr} onClick={() => setPayMode('qr')}>
+                <span style={{ fontSize: 28 }}>📱</span>
+                <span style={{ fontWeight: 800, fontSize: 17 }}>{t('payQR')}</span>
+              </button>
+              <button type="button" style={C.methodBtnCash} onClick={() => { setPayMode('cash'); setReceived('0') }}>
+                <span style={{ fontSize: 28 }}>💵</span>
+                <span style={{ fontWeight: 800, fontSize: 17 }}>{t('payCash')}</span>
+              </button>
+            </div>
+            <button type="button" onClick={onClose} style={{ ...C.cancelBtn, width: '100%', marginTop: 16 }}>{t('cancel')}</button>
+          </>
+        )}
+
+        {payMode === 'qr' && (
+          <>
+            <button type="button" onClick={() => setPayMode('select')} style={C.backToSelect}>
+              ← {t('selectPayment')}
+            </button>
+            <div style={C.totalBox}>
+              <span style={{ color: 'var(--text-light)' }}>{t('total')}</span>
+              <span style={{ color: 'var(--primary)', fontSize: 28, fontWeight: 800 }}>RM {total.toFixed(2)}</span>
+            </div>
+            <p style={{ textAlign: 'center', color: 'var(--text-muted)', fontSize: 14, margin: '12px 0 20px', lineHeight: 1.5 }}>
+              {t('qrPayHint')}
+            </p>
+            <div style={{ display: 'flex', gap: 10 }}>
+              <button type="button" onClick={() => setPayMode('select')} style={C.cancelBtn}>{t('cancel')}</button>
+              <button
+                type="button"
+                style={C.confirmBtn}
+                onClick={() => onConfirm({ method: 'qr', received: total, change: 0 })}
+              >
+                ✓ {t('confirm')} {t('payQR')}
+              </button>
+            </div>
+          </>
+        )}
+
+        {payMode === 'cash' && (
+          <>
+            <button type="button" onClick={() => setPayMode('select')} style={C.backToSelect}>
+              ← {t('selectPayment')}
+            </button>
+            <div style={C.totalBox}>
+              <span style={{ color: 'var(--text-light)' }}>{t('total')}</span>
+              <span style={{ color: 'var(--primary)', fontSize: 28, fontWeight: 800 }}>RM {total.toFixed(2)}</span>
+            </div>
+            <div style={C.quicks}>
+              {[10, 20, 50, 100].map(a => (
+                <button key={a} onClick={() => setReceived(a.toFixed(2))} style={C.quickBtn}>RM {a}</button>
+              ))}
+            </div>
+            <div style={C.receivedBox}>
+              <span style={{ color: 'var(--primary)', fontWeight: 600 }}>{t('received')}</span>
+              <span style={{ color: 'var(--text)', fontSize: 24, fontWeight: 700 }}>RM {parseFloat(received || 0).toFixed(2)}</span>
+            </div>
+            <div style={{
+              ...C.changeBox,
+              background: change < 0 ? 'var(--danger-light)' : 'var(--success-light)',
+              borderColor: change < 0 ? 'var(--danger)' : 'var(--success)',
+            }}>
+              <span style={{ color: change < 0 ? 'var(--danger)' : 'var(--success)', fontWeight: 600 }}>{t('change')}</span>
+              <span style={{ color: change < 0 ? 'var(--danger)' : 'var(--success)', fontSize: 24, fontWeight: 700 }}>
+                RM {change >= 0 ? change.toFixed(2) : '---'}
+              </span>
+            </div>
+            <div style={C.numpad}>
+              {['1','2','3','4','5','6','7','8','9','.','0','⌫'].map(key => (
+                <button key={key} onClick={() => handleKey(key)} style={{
+                  ...C.numKey, ...(key === '⌫' ? { background: 'var(--danger-light)', color: 'var(--danger)' } : {}),
+                }}>{key}</button>
+              ))}
+            </div>
+            <div style={{ display: 'flex', gap: 10, marginTop: 8 }}>
+              <button type="button" onClick={onClose} style={C.cancelBtn}>{t('cancel')}</button>
+              <button
+                type="button"
+                onClick={() => change >= 0 && onConfirm({ method: 'cash', received: num, change })}
+                disabled={change < 0}
+                style={{ ...C.confirmBtn, opacity: change < 0 ? 0.3 : 1 }}
+              >
+                ✓ {t('confirm')}
+              </button>
+            </div>
+          </>
+        )}
       </div>
     </div>
   )
@@ -363,6 +434,22 @@ function CheckoutModal({ total, t, onConfirm, onClose }) {
 const C = {
   overlay: { position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'flex-end', justifyContent: 'center', zIndex: 100, animation: 'fadeIn 0.15s' },
   box: { width: '100%', maxWidth: 520, background: 'var(--bg-card)', borderRadius: '20px 20px 0 0', padding: 20, maxHeight: '95vh', overflow: 'auto', animation: 'slideUp 0.25s', borderTop: '3px solid var(--primary)' },
+  backToSelect: {
+    display: 'block', width: '100%', textAlign: 'left', marginBottom: 12, padding: '6px 0',
+    background: 'none', border: 'none', color: 'var(--primary)', fontSize: 14, fontWeight: 600, cursor: 'pointer',
+  },
+  methodBtnQr: {
+    display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 14,
+    width: '100%', padding: '20px 18px', borderRadius: 14,
+    background: 'linear-gradient(135deg, #0EA5E9, #0284C7)', color: '#FFFFFF',
+    border: '2px solid #0284C7', boxShadow: '0 6px 20px rgba(14,165,233,0.35)',
+  },
+  methodBtnCash: {
+    display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 14,
+    width: '100%', padding: '20px 18px', borderRadius: 14,
+    background: 'linear-gradient(135deg, #22C55E, #16A34A)', color: '#FFFFFF',
+    border: '2px solid #16A34A', boxShadow: '0 6px 20px rgba(34,197,94,0.3)',
+  },
   totalBox: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '14px 18px', marginBottom: 12, background: 'var(--primary-light)', borderRadius: 12, border: '1px solid var(--border)' },
   quicks: { display: 'flex', gap: 8, marginBottom: 10 },
   quickBtn: { flex: 1, padding: '12px 0', borderRadius: 10, background: 'var(--bg-lighter)', border: '1px solid var(--border)', color: 'var(--text)', fontSize: 14, fontWeight: 700 },

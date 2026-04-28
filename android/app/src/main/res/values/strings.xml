@@ -1,7 +1,11 @@
 <?xml version='1.0' encoding='utf-8'?>
 <resources>
-    <string name="app_name">Warung365</string>
-    <string name="title_activity_main">Warung365</string>
+    <string name="app_name">Warung365 V1.15</string>
+    <string name="title_activity_main">Warung365 V1.15</string>
     <string name="package_name">com.warung365.pos</string>
     <string name="custom_url_scheme">com.warung365.pos</string>
+    <string name="lan_host_channel_name">局域网主机同步</string>
+    <string name="lan_host_channel_desc">主机熄屏时仍保持与员工机连接</string>
+    <string name="lan_host_notification_title">Warung365 主机同步</string>
+    <string name="lan_host_notification_text">运行中 — 可熄屏；点「停止服务器」后此通知会消失</string>
 </resources>

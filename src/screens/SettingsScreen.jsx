@@ -84,34 +84,6 @@ export default function SettingsScreen({ onNavigate }) {
       </div>
 
       <div style={S.scroll}>
-        {/* Device Role - everyone can change this */}
-        <Section title={t('deviceRole')} icon="👤">
-          <div style={{ display: 'flex', gap: 10 }}>
-            {[
-              { id: 'cashier', label: t('cashierRole'), desc: t('cashierDesc'), icon: '💰' },
-              { id: 'waiter', label: t('waiterRole'), desc: t('waiterDesc'), icon: '🍽️' },
-            ].map(role => {
-              const active = state.deviceRole === role.id
-              return (
-                <button key={role.id} onClick={() => dispatch({ type: 'SET_DEVICE_ROLE', payload: role.id })} style={{
-                  flex: 1, padding: 16, borderRadius: 14, textAlign: 'center',
-                  border: active ? '2px solid var(--primary)' : '2px solid var(--border)',
-                  background: active ? 'var(--primary-light)' : 'var(--bg-lighter)',
-                  transition: 'all 0.15s',
-                }}>
-                  <div style={{ fontSize: 28 }}>{role.icon}</div>
-                  <div style={{ fontSize: 15, fontWeight: 800, color: active ? 'var(--primary)' : 'var(--text)', marginTop: 6 }}>
-                    {role.label}
-                  </div>
-                  <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 4, lineHeight: 1.4 }}>
-                    {role.desc}
-                  </div>
-                </button>
-              )
-            })}
-          </div>
-        </Section>
-
         {/* License - everyone sees this */}
         <Section title={t('license')} icon="🔑">
           <div style={S.statusBox}>
@@ -129,6 +101,24 @@ export default function SettingsScreen({ onNavigate }) {
             <button style={S.goldBtn} onClick={activateLicense}>{t('activate')}</button>
           </div>
         </Section>
+
+        {!devUnlocked && (
+          <Section title={t('deviceRole')} icon="👤">
+            <div style={{
+              padding: 14, borderRadius: 12, background: 'var(--bg-lighter)', border: '1px solid var(--border)',
+            }}>
+              <div style={{ fontWeight: 800, fontSize: 15, color: 'var(--text)' }}>
+                {state.deviceRole === 'cashier' ? `💰 ${t('cashierRole')}` : `🍽️ ${t('waiterRole')}`}
+              </div>
+              <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 8, lineHeight: 1.5 }}>
+                {state.deviceRole === 'cashier' ? t('cashierDesc') : t('waiterDesc')}
+              </div>
+            </div>
+            <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 10, lineHeight: 1.5 }}>
+              {t('devRoleChangeHint')}
+            </div>
+          </Section>
+        )}
 
         {/* Dev gate */}
         {!devUnlocked ? (
@@ -152,6 +142,36 @@ export default function SettingsScreen({ onNavigate }) {
         ) : (
           <>
             <div style={S.unlockedBanner}>🔓 {t('devUnlocked')}</div>
+
+            <Section title={t('devEmployeeCheckout')} icon="💳">
+              <div style={{ color: 'var(--text-muted)', fontSize: 12, marginBottom: 12, lineHeight: 1.5 }}>
+                {t('devEmployeeCheckoutHint')}
+              </div>
+              <div style={{ display: 'flex', gap: 10 }}>
+                {[
+                  { id: 'cashier', label: t('cashierRole'), desc: t('cashierDesc'), icon: '💰' },
+                  { id: 'waiter', label: t('waiterRole'), desc: t('waiterDesc'), icon: '🍽️' },
+                ].map(role => {
+                  const active = state.deviceRole === role.id
+                  return (
+                    <button key={role.id} type="button" onClick={() => dispatch({ type: 'SET_DEVICE_ROLE', payload: role.id })} style={{
+                      flex: 1, padding: 16, borderRadius: 14, textAlign: 'center',
+                      border: active ? '2px solid var(--primary)' : '2px solid var(--border)',
+                      background: active ? 'var(--primary-light)' : 'var(--bg-lighter)',
+                      transition: 'all 0.15s',
+                    }}>
+                      <div style={{ fontSize: 28 }}>{role.icon}</div>
+                      <div style={{ fontSize: 15, fontWeight: 800, color: active ? 'var(--primary)' : 'var(--text)', marginTop: 6 }}>
+                        {role.label}
+                      </div>
+                      <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 4, lineHeight: 1.4 }}>
+                        {role.desc}
+                      </div>
+                    </button>
+                  )
+                })}
+              </div>
+            </Section>
 
             <Section title={t('shopName')} icon="🏪">
               <div style={S.inputRow}>

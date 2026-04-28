@@ -1,5 +1,9 @@
 {
   "appId": "com.warung365.pos",
-  "appName": "Warung365",
-  "webDir": "dist"
+  "appName": "Warung365 V1.15",
+  "webDir": "dist",
+  "android": {
+    "versionCode": 15,
+    "versionName": "1.15"
+  }
 }

@@ -6,6 +6,7 @@ import {
   CATEGORY_ICONS, CATEGORY_COLORS, ITEM_TYPES, DEPARTMENTS,
   getLocalizedName, getDefaultMenu,
 } from '../data/menuData'
+import { copyText, shareOrDownloadJson } from '../utils/exportHelpers'
 
 // Inline translations for the manager screen itself
 const MANAGER_T = {
@@ -30,6 +31,10 @@ const MANAGER_T = {
     resetDefault: '恢复默认菜单',
     resetConfirm: '重置为默认菜单？当前修改将丢失',
     copied: '已复制', items: '项',
+    share: '分享 / 存檔', shareDone: '已開啟分享，請選 Google Drive、記事本或傳給自己',
+    downloadOk: '已觸發下載，請在「下載」或檔案管理員中查看',
+    copyFailed: '無法複製，請改用「分享」或長按文字框全選複製',
+    apkHint: '手機 APK：建議用「分享」存到雲端或檔案；「複製」可貼到備忘錄。',
     placeholderName: '例: 面食', placeholderItem: '例: 云吞面',
     portionName: '份量名',
     department: '所属部门',
@@ -55,6 +60,10 @@ const MANAGER_T = {
     resetDefault: 'Reset to Default',
     resetConfirm: 'Reset to default menu? All changes will be lost',
     copied: 'Copied', items: 'items',
+    share: 'Share / Save', shareDone: 'Pick an app (Drive, Files, email) to save the backup',
+    downloadOk: 'Download started — check Downloads or Files',
+    copyFailed: 'Copy failed — use Share, or long-press the text to select all',
+    apkHint: 'On Android APK: use Share to save to Drive/Files; Copy for notes apps.',
     placeholderName: 'e.g. Noodles', placeholderItem: 'e.g. Wanton Mee',
     portionName: 'Portion name',
     department: 'Department',
@@ -80,6 +89,10 @@ const MANAGER_T = {
     resetDefault: 'Tetap semula Default',
     resetConfirm: 'Tetap semula ke menu default? Semua perubahan akan hilang',
     copied: 'Disalin', items: 'item',
+    share: 'Kongsi / Simpan', shareDone: 'Pilih app untuk simpan (Drive, Fail, e-mel)',
+    downloadOk: 'Muat turun dimulakan — semak folder Muat Turun',
+    copyFailed: 'Salin gagal — guna Kongsi atau tekan lama teks untuk pilih semua',
+    apkHint: 'APK Android: guna Kongsi untuk simpan ke Drive/Fail; Salin untuk nota.',
     placeholderName: 'cth: Mee', placeholderItem: 'cth: Mee Wantan',
     portionName: 'Nama saiz',
     department: 'Jabatan',
@@ -572,8 +585,18 @@ function ImportExport({ menu, mt, onImport, onClose }) {
     }
   }
 
-  const handleCopy = () => {
-    navigator.clipboard.writeText(jsonText).then(() => alert('✅ ' + mt('copied')))
+  const handleCopy = async () => {
+    const { ok } = await copyText(jsonText)
+    if (ok) alert('✅ ' + mt('copied'))
+    else alert(mt('copyFailed'))
+  }
+
+  const handleShare = async () => {
+    const name = `warung365_menu_${new Date().toISOString().slice(0, 10)}.json`
+    const mode = await shareOrDownloadJson(jsonText, name)
+    if (mode === 'aborted') return
+    if (mode === 'download') alert('✅ ' + mt('downloadOk'))
+    else alert('✅ ' + mt('shareDone'))
   }
 
   return (
@@ -581,6 +604,7 @@ function ImportExport({ menu, mt, onImport, onClose }) {
       <h3 style={styles.modalTitle}>{mt('importExport')}</h3>
       <div style={{ color: 'var(--text-light)', fontSize: 12, marginBottom: 10 }}>
         {mt('importHint')}
+        <div style={{ marginTop: 6, fontSize: 11, opacity: 0.9 }}>📱 {mt('apkHint')}</div>
       </div>
       <textarea
         style={{
@@ -589,9 +613,10 @@ function ImportExport({ menu, mt, onImport, onClose }) {
         value={jsonText}
         onChange={e => setJsonText(e.target.value)}
       />
-      <div style={{ display: 'flex', gap: 10, marginTop: 12 }}>
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10, marginTop: 12 }}>
         <button style={styles.cancelBtn} onClick={onClose}>{mt('close')}</button>
         <button style={styles.flexBtn} onClick={handleCopy}>📋 {mt('copy')}</button>
+        <button style={styles.flexBtn} onClick={handleShare}>📤 {mt('share')}</button>
         <button style={styles.saveBtn} onClick={handleImport}>📥 {mt('import')}</button>
       </div>
     </Modal>

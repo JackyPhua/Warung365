@@ -188,6 +188,8 @@ class PrinterService {
     parts.push(this._BOLD_ON, this._SIZE_DOUBLE)
     parts.push(this._bytes(`TOTAL  RM${total.toFixed(2)}\n`))
     parts.push(this._SIZE_NORMAL, this._BOLD_OFF)
+    const methodLabel = payment.method === 'qr' ? t('payQR') : t('payCash')
+    parts.push(this._bytes(`${t('paymentMethod')}: ${methodLabel}\n`))
     parts.push(this._bytes(`${t('received')}: RM${payment.received.toFixed(2)}\n`))
     parts.push(this._bytes(`${t('change')}: RM${Math.max(0, change).toFixed(2)}\n`))
     parts.push(this._bytes('--------------------------------\n'))

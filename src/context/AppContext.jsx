@@ -241,6 +241,38 @@ function reducer(state, action) {
       }
     }
 
+    // Waiter: mark all non-pending items as served for given orders (syncs to host via orders merge)
+    case 'CONFIRM_MEAL_DELIVERED': {
+      const { orderIds, dismissNotificationTableIds } = action.payload
+      const nextOrders = { ...state.orders }
+      let changed = false
+      for (const oid of orderIds) {
+        const order = nextOrders[oid]
+        if (!order) continue
+        let orderChanged = false
+        const newItems = order.items.map(i => {
+          if (i.kdsStatus === 'pending') return i
+          if (i.kdsStatus === 'served') return i
+          orderChanged = true
+          return { ...i, kdsStatus: 'served' }
+        })
+        if (orderChanged) {
+          nextOrders[oid] = { ...order, items: newItems }
+          changed = true
+        }
+      }
+      if (!changed && !(dismissNotificationTableIds?.length && (state.readyNotifications || []).length)) {
+        return state
+      }
+      let readyNotifications = state.readyNotifications || []
+      if (dismissNotificationTableIds?.length && readyNotifications.length) {
+        const drop = new Set(dismissNotificationTableIds)
+        readyNotifications = readyNotifications.filter(n => !drop.has(n.tableId))
+      }
+      if (!changed) return { ...state, readyNotifications }
+      return { ...state, orders: nextOrders, readyNotifications }
+    }
+
     case 'CLEAR_PAID_TABLE':
       return {
         ...state,

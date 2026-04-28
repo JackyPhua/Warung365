@@ -12,22 +12,54 @@ function formatTime(iso) {
   }
 }
 
+function errText(t, e) {
+  const code = e?.message
+  if (code === 'WORKER_MODE_REQUIRED') return t('jobErrWorkerMode')
+  if (code === 'NATIVE_APK_REQUIRED') return t('jobErrNativeApk')
+  return e?.message || String(e)
+}
+
 export default function WorkerJobsScreen({ onNavigate, job }) {
   const { t } = useApp()
   const [jobs, setJobs] = useState([])
 
   useEffect(() => {
-    if (job) setJobs(prev => [job, ...prev])
+    if (!job?.jobId) return
+    setJobs(prev => (prev.some(j => j.jobId === job.jobId) ? prev : [job, ...prev]))
   }, [job])
 
   useEffect(() => {
-    // Listen for new jobs while on this screen
-    const handler = (job) => setJobs(prev => [job, ...prev])
+    const handler = (incoming) => {
+      if (!incoming?.jobId) return
+      setJobs(prev => (prev.some(j => j.jobId === incoming.jobId) ? prev : [incoming, ...prev]))
+    }
     DispatchService.onJob = handler
     return () => { if (DispatchService.onJob === handler) DispatchService.onJob = null }
   }, [])
 
   const pending = useMemo(() => jobs.filter(j => !j.doneAt), [jobs])
+
+  const handleAccept = async (j) => {
+    if (j.doneAt || j.acceptedAt) return
+    try {
+      await DispatchService.acceptJob(j.jobId)
+      setJobs(prev => prev.map(x => x.jobId === j.jobId ? { ...x, acceptedAt: new Date().toISOString() } : x))
+    } catch (e) {
+      alert(`${t('error')}: ${errText(t, e)}`)
+    }
+  }
+
+  const handleDone = async (j) => {
+    if (j.doneAt) return
+    const doneAt = new Date().toISOString()
+    setJobs(prev => prev.map(x => x.jobId === j.jobId ? { ...x, doneAt } : x))
+    try {
+      await DispatchService.doneJob(j.jobId)
+    } catch (e) {
+      setJobs(prev => prev.map(x => x.jobId === j.jobId ? { ...x, doneAt: undefined } : x))
+      alert(`${t('error')}: ${errText(t, e)}`)
+    }
+  }
 
   return (
     <div style={S.container}>
@@ -75,13 +107,26 @@ export default function WorkerJobsScreen({ onNavigate, job }) {
               ))}
             </div>
 
-            <div style={{ display: 'flex', gap: 8, marginTop: 12 }}>
-              <button style={S.btn} onClick={() => DispatchService.acceptJob(job.jobId)}>✅ {t('acceptJob')}</button>
-              <button style={{ ...S.btn, background: 'var(--success)', color: '#FFF' }}
-                onClick={() => DispatchService.doneJob(job.jobId)}>
-                🏁 {t('doneJob')}
-              </button>
-            </div>
+            {job.doneAt ? (
+              <div style={{ marginTop: 12, color: 'var(--success)', fontWeight: 800, fontSize: 14 }}>
+                ✓ {t('doneJob')} · {formatTime(job.doneAt)}
+              </div>
+            ) : (
+              <div style={{ display: 'flex', gap: 8, marginTop: 12 }}>
+                <button type="button" style={{ ...S.btn, opacity: job.acceptedAt ? 0.55 : 1 }}
+                  disabled={!!job.acceptedAt}
+                  onClick={() => handleAccept(job)}>✅ {t('acceptJob')}</button>
+                <button type="button" style={{ ...S.btn, background: 'var(--success)', color: '#FFF' }}
+                  onClick={() => handleDone(job)}>
+                  🏁 {t('doneJob')}
+                </button>
+              </div>
+            )}
+            {job.acceptedAt && !job.doneAt && (
+              <div style={{ marginTop: 8, color: 'var(--primary)', fontSize: 12, fontWeight: 700 }}>
+                {t('jobAcceptedAt')} {formatTime(job.acceptedAt)}
+              </div>
+            )}
           </div>
         ))}
       </div>

@@ -74,28 +74,42 @@ export default function TableScreen({ onNavigate }) {
   )
   const todayRevenue = todayOrders.reduce((s, o) => s + ((o.payment?.received || 0) - (o.payment?.change || 0)), 0)
 
-  // Build list of orders ready to serve (all items ready, none served/pending)
+  // Orders that can be marked "delivered" by waiter: nothing still cooking; something not yet served
   const readyToServeOrders = useMemo(() => {
     const list = []
     Object.values(state.orders).forEach(order => {
       if (!order.items.length) return
-      const hasKds = order.items.some(i => i.kdsStatus)
-      if (!hasKds) return
-      const allReady = order.items.every(i => i.kdsStatus === 'ready')
-      if (allReady) {
-        list.push({
-          orderId: order.id,
-          tableId: order.tableId,
-          type: order.type,
-          createdAt: order.createdAt,
-          items: order.items,
-          itemSummary: order.items.map(i => i.name.split(' [')[0]).join(', '),
-        })
-      }
+      const hasPending = order.items.some(i => i.kdsStatus === 'pending')
+      if (hasPending) return
+      const needsConfirm = order.items.some(i => i.kdsStatus !== 'served')
+      if (!needsConfirm) return
+      list.push({
+        orderId: order.id,
+        tableId: order.tableId,
+        type: order.type,
+        createdAt: order.createdAt,
+        items: order.items,
+        itemSummary: order.items.map(i => i.name.split(' [')[0]).join(', '),
+      })
     })
     list.sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt))
     return list
   }, [state.orders])
+
+  const dineInReadyGroups = useMemo(() => {
+    const map = new Map()
+    readyToServeOrders.forEach(o => {
+      if (o.tableId === 0) return
+      if (!map.has(o.tableId)) map.set(o.tableId, [])
+      map.get(o.tableId).push(o)
+    })
+    return Array.from(map.entries()).sort(([a], [b]) => a - b)
+  }, [readyToServeOrders])
+
+  const takeawayReadyOrders = useMemo(
+    () => readyToServeOrders.filter(o => o.tableId === 0),
+    [readyToServeOrders],
+  )
 
   const readyTableIds = useMemo(() => {
     const ids = new Set()
@@ -133,11 +147,12 @@ export default function TableScreen({ onNavigate }) {
     prevReadyCountRef.current = count
   }, [readyToServeOrders])
 
-  const handleServe = (orderId) => {
-    const order = state.orders[orderId]
-    if (!order) return
-    const itemIds = order.items.map(i => i.id)
-    dispatch({ type: 'UPDATE_ITEMS_KDS_STATUS', payload: { orderId, itemIds, status: 'served' } })
+  const handleConfirmDelivered = (orderIds, dismissTableIds) => {
+    if (!orderIds?.length) return
+    dispatch({
+      type: 'CONFIRM_MEAL_DELIVERED',
+      payload: { orderIds, dismissNotificationTableIds: dismissTableIds },
+    })
     SoundService.tapSound()
   }
 
@@ -294,8 +309,8 @@ export default function TableScreen({ onNavigate }) {
         </div>
       )}
 
-      {/* Host: Ready to Serve notification panel (computed from local orders) */}
-      {state.serverMode !== 'sub' && readyToServeOrders.length > 0 && (
+      {/* Ready to serve — host + worker phones; confirm marks table yellow for everyone after sync */}
+      {readyToServeOrders.length > 0 && (
         <div style={notifyStyles.panel}>
           <div style={notifyStyles.header}>
             <span style={notifyStyles.headerIcon}>🔔</span>
@@ -304,18 +319,50 @@ export default function TableScreen({ onNavigate }) {
             </span>
           </div>
           <div style={notifyStyles.list}>
-            {readyToServeOrders.map(o => (
+            {dineInReadyGroups.map(([tableId, orders]) => {
+              const ids = orders.map(o => o.orderId)
+              const summary = orders.map(o => o.itemSummary.slice(0, 28) + (o.itemSummary.length > 28 ? '…' : '')).join(' · ')
+              return (
+                <div key={`t-${tableId}`} style={notifyStyles.item}>
+                  <div style={notifyStyles.itemInfo}>
+                    <div style={notifyStyles.itemTable}>
+                      🪑 {t('tableNo')} {tableId}
+                      {orders.length > 1 && (
+                        <span style={{ color: 'var(--text-muted)', fontWeight: 600, marginLeft: 6 }}>
+                          · {orders.length} {t('order')}
+                        </span>
+                      )}
+                    </div>
+                    <div style={notifyStyles.itemSummary}>
+                      {summary.length > 80 ? `${summary.slice(0, 80)}…` : summary}
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    style={notifyStyles.serveBtn}
+                    onClick={() => handleConfirmDelivered(ids, [tableId])}
+                  >
+                    🍽️ {t('confirmDelivered')}
+                  </button>
+                </div>
+              )
+            })}
+            {takeawayReadyOrders.map(o => (
               <div key={o.orderId} style={notifyStyles.item}>
                 <div style={notifyStyles.itemInfo}>
                   <div style={notifyStyles.itemTable}>
-                    {o.tableId === 0 ? `📦 ${t('takeaway')}` : `🪑 ${t('tableNo')} ${o.tableId}`}
+                    📦 {t('takeaway')} #{o.orderId.slice(0, 6).toUpperCase()}
                   </div>
                   <div style={notifyStyles.itemSummary}>
                     {o.items.length} {t('itemOf')} · {o.itemSummary.length > 35 ? o.itemSummary.slice(0, 35) + '...' : o.itemSummary}
                   </div>
                 </div>
-                <button style={notifyStyles.serveBtn} onClick={() => handleServe(o.orderId)}>
-                  🚀 {t('serve')}
+                <button
+                  type="button"
+                  style={notifyStyles.serveBtn}
+                  onClick={() => handleConfirmDelivered([o.orderId], [0])}
+                >
+                  🍽️ {t('confirmDelivered')}
                 </button>
               </div>
             ))}
@@ -335,6 +382,22 @@ export default function TableScreen({ onNavigate }) {
                 </span>
               )}
             </h3>
+
+            {pickerOrders.length > 0 && pickerOrders.every(o => !o.items?.length) && (
+              <button
+                type="button"
+                style={pickerStyles.releaseEmptyBtn}
+                onClick={() => {
+                  pickerOrders.forEach(o => {
+                    dispatch({ type: 'CANCEL_ORDER', payload: { orderId: o.id, tableId: pickerTable.id } })
+                  })
+                  setShowOrderPicker(null)
+                  SoundService.tapSound()
+                }}
+              >
+                🪑 {t('releaseEmptyTable')}
+              </button>
+            )}
 
             {pickerOrders.map((order, idx) => {
               const orderTotal = order.items.reduce((s, i) => s + i.price * i.qty, 0)
@@ -471,6 +534,12 @@ const pickerStyles = {
     background: 'var(--primary)', color: '#FFFFFF',
     display: 'flex', alignItems: 'center', justifyContent: 'center',
     fontSize: 16, fontWeight: 800,
+  },
+  releaseEmptyBtn: {
+    width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
+    padding: '14px 16px', borderRadius: 12, marginBottom: 10,
+    background: 'rgba(239,68,68,0.12)', border: '2px solid #EF4444',
+    color: '#DC2626', fontSize: 15, fontWeight: 700,
   },
   newOrderBtn: {
     width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10,

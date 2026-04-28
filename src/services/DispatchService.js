@@ -1,54 +1,59 @@
 // src/services/DispatchService.js
 // "1 host + many workers" dispatch over LAN TCP (Android APK).
-// Recommended: use a router hotspot. Web mode: generates QR but cannot auto-connect.
+// Uses router WiFi (not WiFi Direct peer-to-peer).
+// Web mode: generates QR but cannot auto-connect.
 
-import WifiDirectService from './WifiDirectService'
+import LanTcpService from './LanTcpService'
 
-function nowIso() {
-  return new Date().toISOString()
-}
+function nowIso() { return new Date().toISOString() }
+function uniqName() { return `Worker-${Math.floor(Math.random() * 9000) + 1000}` }
 
-function uniqName() {
-  const n = Math.floor(Math.random() * 9000) + 1000
-  return `Worker-${n}`
-}
+const HEARTBEAT_INTERVAL = 15000  // 15 seconds
+const RECONNECT_DELAY    = 3000   // 3 seconds
 
 class DispatchService {
   constructor() {
-    this.mode = null // 'host' | 'worker'
-    this.port = 8765
-    this.workers = [] // { id, name, remoteAddress }
-    this.onWorkers = null
-    this.onJob = null
-    this.onState = null
-    this.onWorkerOrders = null
-    this.onReadyNotify = null
-    this._unsubs = []
-    this._workerId = null
+    this.mode        = null   // 'host' | 'worker'
+    this.port        = 8765
+    this.workers     = []     // { id, name, remoteAddress }
+    this.onWorkers   = null
+    this.onJob       = null
+    this.onState     = null
+    this.onWorkerOrders  = null
+    this.onReadyNotify   = null
+    this.onJobProgress   = null  // host: ACCEPT_JOB / DONE_JOB from workers
+    this._unsubs     = []
+    this._workerId   = null
     this._workerName = null
-    this._hostDeviceAddress = null
-    this._hostIp = null
+    this._hostIp     = null
+    this._joinPayload = null   // saved for reconnect
+
+    // Heartbeat / reconnect handles
+    this._heartbeatTimer  = null
+    this._reconnectTimer  = null
+    this._stopped         = false
   }
 
-  get isNative() {
-    return WifiDirectService.isSupported
-  }
+  get isNative() { return LanTcpService.isSupported }
 
   getJoinPayload({ shopName, storeId, language } = {}) {
     return {
       t: 'WORKER_JOIN',
-      shopName: shopName || '',
-      storeId: storeId || '',
-      language: language || 'zh',
-      port: this.port,
-      hostDeviceAddress: this._hostDeviceAddress || undefined,
-      hostIp: this._hostIp || undefined,
+      shopName:  shopName  || '',
+      storeId:   storeId   || '',
+      language:  language  || 'zh',
+      port:      this.port,
+      hostIp:    this._hostIp || undefined,
       v: 1,
     }
   }
 
+  // ═══════════════════════════════════════════════════════════════
+  //  HOST
+  // ═══════════════════════════════════════════════════════════════
   async startHost({ shopName, storeId, language, onWorkers } = {}) {
     await this.stop()
+    this._stopped = false
     this.mode = 'host'
     this.onWorkers = onWorkers || null
     this.workers = []
@@ -58,41 +63,63 @@ class DispatchService {
       return { ok: true, mode: 'web' }
     }
 
-    // LAN hotspot mode: no peer discovery / no group owner creation.
-    // Host just starts a TCP server and publishes its LAN IP via QR.
-    await WifiDirectService.startServer(this.port)
+    await LanTcpService.startServer(this.port)
 
-    const ip = await WifiDirectService.getLocalIp()
-    this._hostIp = ip?.ip || null
-    this._hostDeviceAddress = null
+    const ipResult = await LanTcpService.getLocalIp()
+    this._hostIp = ipResult?.ip || null
 
     this._wire()
-    return { ok: true, join: this.getJoinPayload({ shopName, storeId, language }), hostIp: this._hostIp }
+    this._startHostHeartbeat()
+
+    return {
+      ok: true,
+      join: this.getJoinPayload({ shopName, storeId, language }),
+      hostIp: this._hostIp,
+    }
   }
 
+  // Host heartbeat: ping all workers every 15s
+  _startHostHeartbeat() {
+    this._clearTimers()
+    this._heartbeatTimer = setInterval(async () => {
+      if (this.mode !== 'host' || !this.isNative) return
+      try {
+        await LanTcpService.sendJson({ t: 'PING', at: nowIso() })
+      } catch (e) {}
+    }, HEARTBEAT_INTERVAL)
+  }
+
+  // ═══════════════════════════════════════════════════════════════
+  //  WORKER
+  // ═══════════════════════════════════════════════════════════════
   async connectWorker({ joinPayload, name, onJob } = {}) {
     await this.stop()
+    this._stopped = false
     this.mode = 'worker'
     this.onJob = onJob || null
     this._workerName = (name || uniqName()).trim()
+    this._joinPayload = joinPayload  // save for auto-reconnect
 
     if (!this.isNative) {
-      // Fallback: use localStorage cross-tab sync instead of WifiDirect
       this._workerId = `W-local-${Date.now()}`
       return { ok: true, host: 'localStorage', port: 0, name: this._workerName, mode: 'local' }
     }
 
-    const host = joinPayload?.hostIp
-    if (!host) throw new Error('Missing host IP in QR/JSON')
-    const port = joinPayload?.port || this.port
+    return await this._doConnect()
+  }
 
-    await WifiDirectService.connectToGroupOwner({ host, port, retries: 5 })
+  async _doConnect() {
+    const host = this._joinPayload?.hostIp
+    if (!host) throw new Error('Missing host IP in QR/JSON')
+    const port = this._joinPayload?.port || this.port
+
+    await LanTcpService.connectToGroupOwner({ host, port, retries: 5 })
 
     this._wire()
+    this._startWorkerHeartbeat()
 
     await new Promise(r => setTimeout(r, 300))
-
-    await WifiDirectService.sendJson({
+    await LanTcpService.sendJson({
       t: 'HELLO',
       role: 'worker',
       name: this._workerName,
@@ -102,16 +129,62 @@ class DispatchService {
     return { ok: true, host, port, name: this._workerName }
   }
 
+  // Worker heartbeat: send PONG back when PING received, detect silence
+  _startWorkerHeartbeat() {
+    this._clearTimers()
+    let lastPing = Date.now()
+
+    // Watch for silence: if no PING for 2 intervals, reconnect
+    this._heartbeatTimer = setInterval(() => {
+      if (this.mode !== 'worker' || this._stopped) return
+      const silence = Date.now() - lastPing
+      if (silence > HEARTBEAT_INTERVAL * 2 + 5000) {
+        console.log('[Dispatch] Host silent, reconnecting...')
+        this._scheduleReconnect()
+      }
+    }, HEARTBEAT_INTERVAL)
+
+    // Store lastPing updater so _handleWorkerMessage can call it
+    this._updateLastPing = () => { lastPing = Date.now() }
+  }
+
+  _scheduleReconnect() {
+    if (this._reconnectTimer || this._stopped) return
+    this._clearTimers()
+    this._reconnectTimer = setTimeout(async () => {
+      this._reconnectTimer = null
+      if (this._stopped || this.mode !== 'worker') return
+      try {
+        this._unwire()
+        await LanTcpService.disconnectClient()
+        console.log('[Dispatch] Attempting reconnect...')
+        await this._doConnect()
+        console.log('[Dispatch] Reconnected!')
+      } catch (e) {
+        console.log('[Dispatch] Reconnect failed, retry in 3s', e.message)
+        this._scheduleReconnect()
+      }
+    }, RECONNECT_DELAY)
+  }
+
+  _clearTimers() {
+    if (this._heartbeatTimer) { clearInterval(this._heartbeatTimer); this._heartbeatTimer = null }
+    if (this._reconnectTimer) { clearTimeout(this._reconnectTimer);  this._reconnectTimer = null }
+  }
+
+  // ═══════════════════════════════════════════════════════════════
+  //  STOP
+  // ═══════════════════════════════════════════════════════════════
   async stop() {
-    if (!this.mode) return
+    this._stopped = true
+    this._clearTimers()
     this._unwire()
 
     if (this.isNative) {
       if (this.mode === 'host') {
-        try { await WifiDirectService.stopServer() } catch (e) {}
-        try { await WifiDirectService.removeGroup() } catch (e) {}
+        try { await LanTcpService.stopServer() } catch (e) {}
       } else if (this.mode === 'worker') {
-        try { await WifiDirectService.disconnectClient() } catch (e) {}
+        try { await LanTcpService.disconnectClient() } catch (e) {}
       }
     }
 
@@ -121,72 +194,72 @@ class DispatchService {
     this.workers = []
     this._workerId = null
     this._workerName = null
+    this._joinPayload = null
+    this._updateLastPing = null
   }
 
-  // Host: broadcast a new job to all workers
+  // ═══════════════════════════════════════════════════════════════
+  //  BROADCAST / SEND
+  // ═══════════════════════════════════════════════════════════════
   async broadcastNewJob(job) {
-    if (this.mode !== 'host') return
-    if (!this.isNative) return
-    await WifiDirectService.sendJson({ t: 'NEW_JOB', job })
+    if (this.mode !== 'host' || !this.isNative) return
+    await LanTcpService.sendJson({ t: 'NEW_JOB', job })
   }
 
-  // Host: broadcast full state snapshot to workers
   async broadcastState(state) {
-    if (this.mode !== 'host') return
-    if (!this.isNative) return
-    await WifiDirectService.sendJson({ t: 'STATE', state })
+    if (this.mode !== 'host' || !this.isNative) return
+    await LanTcpService.sendJson({ t: 'STATE', state })
   }
 
-  // Worker: send orders snapshot back to host (no tables — host derives table status from orders)
   async sendOrdersToHost(orders) {
-    if (this.mode !== 'worker') return
-    if (!this.isNative) return
-    await WifiDirectService.sendJson({ t: 'WORKER_ORDERS', orders })
+    if (this.mode !== 'worker' || !this.isNative) return
+    await LanTcpService.sendJson({ t: 'WORKER_ORDERS', orders })
   }
 
-  // Host: push a "food ready" notification directly to all workers (immediate, no state sync delay)
   async notifyReady({ orderId, tableId, itemSummary } = {}) {
-    if (this.mode !== 'host') return
-    if (!this.isNative) return
-    await WifiDirectService.sendJson({ t: 'NOTIFY_READY', orderId, tableId, itemSummary })
+    if (this.mode !== 'host' || !this.isNative) return
+    await LanTcpService.sendJson({ t: 'NOTIFY_READY', orderId, tableId, itemSummary })
   }
 
-  // Worker: accept/done (optional for now)
   async acceptJob(jobId) {
-    if (this.mode !== 'worker') return
-    if (!this.isNative) return
-    await WifiDirectService.sendJson({ t: 'ACCEPT_JOB', jobId, at: nowIso(), workerId: this._workerId })
+    if (this.mode !== 'worker') throw new Error('WORKER_MODE_REQUIRED')
+    if (!this.isNative) throw new Error('NATIVE_APK_REQUIRED')
+    await LanTcpService.sendJson({ t: 'ACCEPT_JOB', jobId, at: nowIso(), workerId: this._workerId })
   }
 
   async doneJob(jobId) {
-    if (this.mode !== 'worker') return
-    if (!this.isNative) return
-    await WifiDirectService.sendJson({ t: 'DONE_JOB', jobId, at: nowIso(), workerId: this._workerId })
+    if (this.mode !== 'worker') throw new Error('WORKER_MODE_REQUIRED')
+    if (!this.isNative) throw new Error('NATIVE_APK_REQUIRED')
+    await LanTcpService.sendJson({ t: 'DONE_JOB', jobId, at: nowIso(), workerId: this._workerId })
   }
 
-  // ───────────────────────── internal ─────────────────────────
+  // ═══════════════════════════════════════════════════════════════
+  //  INTERNAL WIRING
+  // ═══════════════════════════════════════════════════════════════
   _notifyWorkers() {
     if (this.onWorkers) this.onWorkers(this.workers)
   }
 
   _wire() {
-    if (!this.isNative) return
-    if (this._unsubs.length) return
+    if (!this.isNative || this._unsubs.length) return
 
-    const sub = (name, cb) => WifiDirectService.addListener(name, cb)
-
-    sub('message', (ev) => {
+    LanTcpService.addListener('message', (ev) => {
       const base64 = ev?.base64
       if (!base64) return
       let msg
-      try {
-        msg = WifiDirectService.decodeBase64ToJson(base64)
-      } catch (e) {
-        return
-      }
-
-      if (this.mode === 'host') this._handleHostMessage(msg, ev?.from)
+      try { msg = LanTcpService.decodeBase64ToJson(base64) } catch (e) { return }
+      if (this.mode === 'host')   this._handleHostMessage(msg, ev?.from)
       else if (this.mode === 'worker') this._handleWorkerMessage(msg)
+    }).then(h => this._unsubs.push(h))
+
+    // Host: detect worker disconnect
+    LanTcpService.addListener('clientDisconnected', (ev) => {
+      if (this.mode !== 'host') return
+      const addr = ev?.remoteAddress
+      if (addr) {
+        this.workers = this.workers.filter(w => w.remoteAddress !== addr)
+        this._notifyWorkers()
+      }
     }).then(h => this._unsubs.push(h))
   }
 
@@ -194,85 +267,77 @@ class DispatchService {
     const unsubs = this._unsubs
     this._unsubs = []
     for (const h of unsubs) {
-      try { h?.remove && h.remove() } catch (e) {}
+      try { h?.remove?.() } catch (e) {}
     }
   }
 
   async _handleHostMessage(msg, from) {
     if (!msg?.t) return
+
     if (msg.t === 'HELLO' && msg.role === 'worker') {
       const remoteAddress = from?.remoteAddress || 'worker'
       const id = `W-${remoteAddress.replace(/\./g, '_')}`
       const name = String(msg.name || remoteAddress)
-
-      const exists = this.workers.some(w => w.id === id)
-      if (!exists) {
+      if (!this.workers.some(w => w.id === id)) {
         this.workers = [...this.workers, { id, name, remoteAddress }]
         this._notifyWorkers()
       }
-
-      await WifiDirectService.sendJson({ t: 'WELCOME', workerId: id, at: nowIso() })
+      await LanTcpService.sendJson({ t: 'WELCOME', workerId: id, at: nowIso() })
       return
     }
 
-    // Worker pushed its orders back to host
+    if (msg.t === 'PONG') return  // heartbeat reply, ignore
+
     if (msg.t === 'WORKER_ORDERS' && msg.orders) {
       if (this.onWorkerOrders) this.onWorkerOrders(msg.orders)
+      return
+    }
+
+    if (msg.t === 'ACCEPT_JOB' && msg.jobId) {
+      if (this.onJobProgress) this.onJobProgress({ kind: 'accept', ...msg })
+      return
+    }
+
+    if (msg.t === 'DONE_JOB' && msg.jobId) {
+      if (this.onJobProgress) this.onJobProgress({ kind: 'done', ...msg })
       return
     }
   }
 
   _handleWorkerMessage(msg) {
     if (!msg?.t) return
+
     if (msg.t === 'WELCOME') {
       this._workerId = msg.workerId || this._workerId
       return
     }
+
+    // Heartbeat PING → reply PONG
+    if (msg.t === 'PING') {
+      if (this._updateLastPing) this._updateLastPing()
+      LanTcpService.sendJson({ t: 'PONG', at: nowIso() }).catch(() => {})
+      return
+    }
+
     if (msg.t === 'NEW_JOB' && msg.job) {
       if (this.onJob) this.onJob(msg.job)
       return
     }
+
     if (msg.t === 'STATE' && msg.state) {
       if (this.onState) this.onState(msg.state)
       return
     }
+
     if (msg.t === 'NOTIFY_READY') {
-      if (this.onReadyNotify) this.onReadyNotify({ orderId: msg.orderId, tableId: msg.tableId, itemSummary: msg.itemSummary })
+      if (this.onReadyNotify) this.onReadyNotify({
+        orderId: msg.orderId,
+        tableId: msg.tableId,
+        itemSummary: msg.itemSummary,
+      })
       return
     }
-  }
-
-  _waitForPeers(timeoutMs) {
-    const start = Date.now()
-    return new Promise((resolve) => {
-      const tick = async () => {
-        try {
-          const r = await WifiDirectService.getPeers()
-          const peers = Array.isArray(r?.peers) ? r.peers : []
-          if (peers.length) { resolve(peers); return }
-        } catch (e) {}
-        if (Date.now() - start >= timeoutMs) { resolve([]); return }
-        setTimeout(tick, 350)
-      }
-      tick()
-    })
-  }
-
-  _waitForConnectionInfo(timeoutMs) {
-    const start = Date.now()
-    return new Promise((resolve) => {
-      const tick = async () => {
-        try {
-          const info = await WifiDirectService.requestConnectionInfo()
-          if (info?.available) { resolve(info); return }
-        } catch (e) {}
-        if (Date.now() - start >= timeoutMs) { resolve(null); return }
-        setTimeout(tick, 350)
-      }
-      tick()
-    })
   }
 }
 
 export default new DispatchService()
-
