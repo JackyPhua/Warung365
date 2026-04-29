@@ -1,7 +1,7 @@
 {
   "name": "pos-web",
   "private": true,
-  "version": "1.0.0",
+  "version": "1.20.0",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -10,7 +10,8 @@
     "cap:sync": "npm run build && npx cap sync",
     "cap:open": "npx cap open android",
     "apk:dev": "npm run build && npx cap sync && npx cap run android",
-    "apk:release": "npm run build && npx cap sync && cd android && ./gradlew assembleRelease"
+    "apk:release": "npm run build && npx cap sync && node scripts/assemble-android-release.mjs",
+    "license:gen": "node scripts/generate-license-key.mjs"
   },
   "dependencies": {
     "@capacitor/android": "^8.3.1",
@@ -22,7 +23,8 @@
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
     "react-router-dom": "^6.26.0",
-    "uuid": "^10.0.0"
+    "uuid": "^10.0.0",
+    "xlsx": "^0.18.5"
   },
   "devDependencies": {
     "@vitejs/plugin-react": "^4.3.1",

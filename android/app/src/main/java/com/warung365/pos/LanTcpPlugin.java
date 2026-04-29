@@ -3,6 +3,8 @@ package com.warung365.pos;
 import android.content.Context;
 import android.content.Intent;
 import android.os.Build;
+import android.os.Handler;
+import android.os.Looper;
 import android.util.Base64;
 
 import com.getcapacitor.JSObject;
@@ -67,6 +69,15 @@ public class LanTcpPlugin extends Plugin {
   public void startServer(PluginCall call) {
     int port = call.getInt("port", 8765);
     stopServerInternal();
+    Context ctxBind = getContext();
+    if (ctxBind != null) {
+      Runnable fg = this::startHostForegroundService;
+      if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+        ctxBind.getMainExecutor().execute(fg);
+      } else {
+        new Handler(Looper.getMainLooper()).post(fg);
+      }
+    }
     new Thread(() -> {
       try {
         ServerSocket ss = new ServerSocket();
@@ -81,7 +92,6 @@ public class LanTcpPlugin extends Plugin {
         call.resolve(ret);
 
         notifyListeners("serverStarted", ret);
-        startHostForegroundService();
 
         while (!ss.isClosed()) {
           try {
@@ -96,6 +106,7 @@ public class LanTcpPlugin extends Plugin {
           }
         }
       } catch (IOException e) {
+        stopHostForegroundService();
         JSObject err = new JSObject();
         err.put("message", e.getMessage());
         notifyListeners("serverError", err);

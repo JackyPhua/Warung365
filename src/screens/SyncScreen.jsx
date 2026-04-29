@@ -6,8 +6,8 @@ import DispatchService from '../services/DispatchService'
 
 export default function SyncScreen({ onNavigate }) {
   const { state, dispatch, t } = useApp()
-  const normalizedMode = state.serverMode === 'sub' ? 'worker' : (state.serverMode || 'main')
-  const [mode, setMode] = useState(normalizedMode)
+  const canHost = !!state.developerSyncHostEnabled
+  const [mode, setMode] = useState(() => (state.serverMode === 'sub' ? 'sub' : 'main'))
   const [qrDataUrl, setQrDataUrl] = useState('')
 
   // Derive host status from global state (survives navigation away and back)
@@ -39,6 +39,10 @@ export default function SyncScreen({ onNavigate }) {
   }, [isServerRunning, dispatch])
 
   const startMain = async () => {
+    if (!canHost) {
+      alert(t('syncHostRequiresDev'))
+      return
+    }
     if (isServerRunning) return // already running — don't restart and kill workers
     try {
       const r = await DispatchService.startHost({
@@ -68,10 +72,81 @@ export default function SyncScreen({ onNavigate }) {
   }
 
   const connectWorker = () => onNavigate('workerJoin')
-  const disconnectWorker = async () => {
-    await DispatchService.stop()
-    dispatch({ type: 'SET_SERVER_MODE', payload: 'main' })
-  }
+
+  const WorkerJoinSection = (
+    <div style={styles.section}>
+      <div style={styles.sectionTitle}>📱 {t('workerPhone')}</div>
+      <div style={styles.desc}>{t('workerDesc')}</div>
+      <button
+        style={{
+          ...styles.primaryBtn,
+          background: 'var(--grad-gold)',
+          color: 'var(--primary-dark)',
+          boxShadow: 'var(--shadow-gold)',
+        }}
+        onClick={connectWorker}
+      >
+        📷 {t('scanToJoin')}
+      </button>
+    </div>
+  )
+
+  const MainHostSection = (
+    <div style={styles.section}>
+      <div style={styles.sectionTitle}>🖥️ {t('mainDevice')}</div>
+      <div style={styles.desc}>{t('hostDesc')}</div>
+
+      {!isServerRunning ? (
+        <button style={styles.primaryBtn} onClick={startMain}>▶ {t('startServer')}</button>
+      ) : (
+        <>
+          <div style={styles.statusBox}>
+            <div style={{ color: 'var(--success)', fontSize: 14, fontWeight: 700 }}>
+              ● {t('serverRunning')}
+            </div>
+            <div style={{ color: 'var(--text)', fontSize: 15, marginTop: 6, fontWeight: 600 }}>
+              IP: {localIp}:8765
+            </div>
+            <div style={{ color: 'var(--text-light)', fontSize: 12, marginTop: 4 }}>
+              {state.connectedClients.length} {t('deviceCount')} {t('connected')}
+            </div>
+            <div style={{
+              fontSize: 11,
+              marginTop: 10,
+              lineHeight: 1.45,
+              padding: '10px 10px',
+              borderRadius: 8,
+              background: 'var(--warning-light)',
+              color: '#92400E',
+            }}>
+              {t('hostScreenOffHint')}
+            </div>
+          </div>
+
+          {qrDataUrl && (
+            <div style={styles.qrBox}>
+              <div style={{ color: 'var(--primary-dark)', fontSize: 14, fontWeight: 700, marginBottom: 14 }}>
+                📱 {t('scanQR')}
+              </div>
+              <img src={qrDataUrl} alt="QR" style={{ width: 240, height: 240 }} />
+              <div style={{ color: 'var(--primary)', fontSize: 13, marginTop: 10, fontWeight: 600 }}>
+                {localIp}
+              </div>
+            </div>
+          )}
+
+          {state.connectedClients.map((c, i) => (
+            <div key={i} style={styles.clientRow}>
+              <span style={{ color: 'var(--success)' }}>●</span>
+              <span style={{ color: 'var(--text)', fontSize: 13 }}>{c}</span>
+            </div>
+          ))}
+
+          <button style={styles.dangerBtn} onClick={stopMain}>⏹ {t('stopServer')}</button>
+        </>
+      )}
+    </div>
+  )
 
   return (
     <div style={styles.container}>
@@ -82,91 +157,44 @@ export default function SyncScreen({ onNavigate }) {
       </div>
 
       <div style={styles.scroll}>
-        <div style={styles.modeRow}>
-          <button
-            style={{
-              ...styles.modeBtn,
-              background: mode === 'main' ? 'var(--grad-primary)' : 'var(--bg-card)',
-              color: mode === 'main' ? '#FFFFFF' : 'var(--text)',
-              borderColor: mode === 'main' ? 'var(--primary)' : 'var(--border)',
-              boxShadow: mode === 'main' ? 'var(--shadow-purple)' : 'var(--shadow-sm)',
-            }}
-            onClick={() => setMode('main')}
-          >
-            <div style={{ fontSize: 28 }}>📟</div>
-            <div style={{ marginTop: 6, fontWeight: 700, fontSize: 13 }}>{t('mainDevice')}</div>
-          </button>
-          <button
-            style={{
-              ...styles.modeBtn,
-              background: mode === 'sub' ? 'var(--grad-gold)' : 'var(--bg-card)',
-              color: mode === 'sub' ? 'var(--primary-dark)' : 'var(--text)',
-              borderColor: mode === 'sub' ? 'var(--gold)' : 'var(--border)',
-              boxShadow: mode === 'sub' ? 'var(--shadow-gold)' : 'var(--shadow-sm)',
-            }}
-            onClick={() => setMode('sub')}
-          >
-            <div style={{ fontSize: 28 }}>📱</div>
-            <div style={{ marginTop: 6, fontWeight: 700, fontSize: 13 }}>{t('subDevice')}</div>
-          </button>
-        </div>
-
-        {mode === 'main' ? (
-          <div style={styles.section}>
-            <div style={styles.sectionTitle}>🖥️ {t('mainDevice')}</div>
-            <div style={styles.desc}>{t('hostDesc')}</div>
-
-            {!isServerRunning ? (
-              <button style={styles.primaryBtn} onClick={startMain}>▶ {t('startServer')}</button>
-            ) : (
-              <>
-                <div style={styles.statusBox}>
-                  <div style={{ color: 'var(--success)', fontSize: 14, fontWeight: 700 }}>
-                    ● {t('serverRunning')}
-                  </div>
-                  <div style={{ color: 'var(--text)', fontSize: 15, marginTop: 6, fontWeight: 600 }}>
-                    IP: {localIp}:8765
-                  </div>
-                  <div style={{ color: 'var(--text-light)', fontSize: 12, marginTop: 4 }}>
-                    {state.connectedClients.length} {t('deviceCount')} {t('connected')}
-                  </div>
-                </div>
-
-                {qrDataUrl && (
-                  <div style={styles.qrBox}>
-                    <div style={{ color: 'var(--primary-dark)', fontSize: 14, fontWeight: 700, marginBottom: 14 }}>
-                      📱 {t('scanQR')}
-                    </div>
-                    <img src={qrDataUrl} alt="QR" style={{ width: 240, height: 240 }} />
-                    <div style={{ color: 'var(--primary)', fontSize: 13, marginTop: 10, fontWeight: 600 }}>
-                      {localIp}
-                    </div>
-                  </div>
-                )}
-
-                {state.connectedClients.map((c, i) => (
-                  <div key={i} style={styles.clientRow}>
-                    <span style={{ color: 'var(--success)' }}>●</span>
-                    <span style={{ color: 'var(--text)', fontSize: 13 }}>{c}</span>
-                  </div>
-                ))}
-
-                <button style={styles.dangerBtn} onClick={stopMain}>⏹ {t('stopServer')}</button>
-              </>
-            )}
-          </div>
-        ) : (
-          <div style={styles.section}>
-            <div style={styles.sectionTitle}>📱 {t('workerPhone')}</div>
-            <div style={styles.desc}>{t('workerDesc')}</div>
+        {canHost ? (
+          <div style={styles.modeRow}>
             <button
-              style={{ ...styles.primaryBtn, background: 'var(--grad-gold)', color: 'var(--primary-dark)', boxShadow: 'var(--shadow-gold)' }}
-              onClick={connectWorker}
+              type="button"
+              style={{
+                ...styles.modeBtn,
+                background: mode === 'main' ? 'var(--grad-primary)' : 'var(--bg-card)',
+                color: mode === 'main' ? '#FFFFFF' : 'var(--text)',
+                borderColor: mode === 'main' ? 'var(--primary)' : 'var(--border)',
+                boxShadow: mode === 'main' ? 'var(--shadow-purple)' : 'var(--shadow-sm)',
+              }}
+              onClick={() => setMode('main')}
             >
-              📷 {t('scanToJoin')}
+              <div style={{ fontSize: 28 }}>📟</div>
+              <div style={{ marginTop: 6, fontWeight: 700, fontSize: 13 }}>{t('mainDevice')}</div>
+            </button>
+            <button
+              type="button"
+              style={{
+                ...styles.modeBtn,
+                background: mode === 'sub' ? 'var(--grad-gold)' : 'var(--bg-card)',
+                color: mode === 'sub' ? 'var(--primary-dark)' : 'var(--text)',
+                borderColor: mode === 'sub' ? 'var(--gold)' : 'var(--border)',
+                boxShadow: mode === 'sub' ? 'var(--shadow-gold)' : 'var(--shadow-sm)',
+              }}
+              onClick={() => setMode('sub')}
+            >
+              <div style={{ fontSize: 28 }}>📱</div>
+              <div style={{ marginTop: 6, fontWeight: 700, fontSize: 13 }}>{t('subDevice')}</div>
             </button>
           </div>
+        ) : (
+          <div style={styles.devGateBanner}>
+            {t('syncHostRequiresDev')}
+          </div>
         )}
+
+        {canHost && mode === 'main' ? MainHostSection : WorkerJoinSection}
 
         <div style={styles.infoBox}>
           <div style={{ color: 'var(--text)', fontSize: 13, fontWeight: 700, marginBottom: 10 }}>
@@ -204,6 +232,17 @@ const styles = {
   },
   title: { color: 'var(--text)', fontSize: 16, fontWeight: 700 },
   scroll: { flex: 1, overflow: 'auto', padding: 16 },
+  devGateBanner: {
+    background: 'var(--primary-light)',
+    border: '1px solid var(--primary)',
+    borderRadius: 12,
+    padding: '12px 14px',
+    marginBottom: 14,
+    color: 'var(--primary-dark)',
+    fontSize: 13,
+    lineHeight: 1.5,
+    fontWeight: 600,
+  },
   modeRow: { display: 'flex', gap: 12, marginBottom: 14 },
   modeBtn: {
     flex: 1, padding: '18px 10px', borderRadius: 14,

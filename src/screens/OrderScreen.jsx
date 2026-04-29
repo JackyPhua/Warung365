@@ -8,9 +8,11 @@ import DispatchService from '../services/DispatchService'
 
 export default function OrderScreen({ orderId, tableId, onNavigate }) {
   const { state, dispatch, t, getOrderTotal } = useApp()
-  const isWaiter = state.deviceRole === 'waiter'
-  // Workers can checkout takeaway orders (tableId===0) but not dine-in tables
-  const canCheckout = !isWaiter || tableId === 0
+  const isCashier = state.deviceRole === 'cashier'
+  /** Waiter: view total only — no checkout (including takeaway). Cashier: full payment. */
+  const canCheckout = isCashier
+  /** Cancel entire order: cashier always; waiter only for takeaway (table 0). */
+  const canCancelWholeOrder = isCashier || tableId === 0
   const [showCheckout, setShowCheckout] = useState(false)
   const [showReceipt, setShowReceipt] = useState(null) // { order, payment } or null
   const [editingNote, setEditingNote] = useState(null)
@@ -154,7 +156,7 @@ export default function OrderScreen({ orderId, tableId, onNavigate }) {
           <span style={{ color: 'var(--primary)', fontSize: 28, fontWeight: 800 }}>RM {total.toFixed(2)}</span>
         </div>
         <div style={{ display: 'flex', gap: 8 }}>
-          {canCheckout && (
+          {canCancelWholeOrder && (
             <button style={S.cancelBtn} onClick={() => {
               if (confirm(t('cancelOrder') + '?')) {
                 dispatch({ type: 'CANCEL_ORDER', payload: { orderId, tableId } }); SoundService.errorSound(); onNavigate('tables')

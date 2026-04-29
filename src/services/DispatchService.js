@@ -211,9 +211,16 @@ class DispatchService {
     await LanTcpService.sendJson({ t: 'STATE', state })
   }
 
-  async sendOrdersToHost(orders) {
+  /** @param orders — worker's full orders map after local edits */
+  /** @param {{ removedOrderIds?: string[] }} [opts] — order IDs explicitly removed locally (cancellation, checkout, etc.). Host merges deletions reliably. */
+  async sendOrdersToHost(orders, opts = {}) {
     if (this.mode !== 'worker' || !this.isNative) return
-    await LanTcpService.sendJson({ t: 'WORKER_ORDERS', orders })
+    const removedOrderIds = Array.isArray(opts.removedOrderIds) ? opts.removedOrderIds : []
+    await LanTcpService.sendJson({
+      t: 'WORKER_ORDERS',
+      orders,
+      ...(removedOrderIds.length ? { removedOrderIds } : {}),
+    })
   }
 
   async notifyReady({ orderId, tableId, itemSummary } = {}) {
@@ -289,7 +296,12 @@ class DispatchService {
     if (msg.t === 'PONG') return  // heartbeat reply, ignore
 
     if (msg.t === 'WORKER_ORDERS' && msg.orders) {
-      if (this.onWorkerOrders) this.onWorkerOrders(msg.orders)
+      if (this.onWorkerOrders) {
+        this.onWorkerOrders({
+          orders: msg.orders,
+          removedOrderIds: Array.isArray(msg.removedOrderIds) ? msg.removedOrderIds : [],
+        })
+      }
       return
     }
 

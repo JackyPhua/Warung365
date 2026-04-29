@@ -51,7 +51,16 @@ export default function App() {
 
   return (
     <AppProvider>
-      <div style={{ height: '100%', maxWidth: 1400, margin: '0 auto', position: 'relative' }}>
+      <div style={{
+        flex: 1,
+        minHeight: 0,
+        display: 'flex',
+        flexDirection: 'column',
+        width: '100%',
+        maxWidth: 1400,
+        margin: '0 auto',
+        position: 'relative',
+      }}>
         {renderScreen()}
       </div>
     </AppProvider>

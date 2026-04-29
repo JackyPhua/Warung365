@@ -1,5 +1,5 @@
 // src/screens/MenuScreen.jsx
-import React, { useState, useEffect, useRef } from 'react'
+import React, { useState, useEffect, useRef, useMemo } from 'react'
 import { v4 as uuidv4 } from 'uuid'
 import { useApp } from '../context/AppContext'
 import { COOKING_METHODS, getLocalizedName } from '../data/menuData'
@@ -114,6 +114,17 @@ export default function MenuScreen({ tableId, orderId: existingOrderId, orderTyp
   }
 
   const getPrice = (item) => item.type === 'portion' ? (item.portions?.[0]?.price || 0) : (item.price || 0)
+
+  /** Takeaway order sheet: no dine-in row; packing fee Row only when RM>0 else one plain 「打包」 + extras */
+  const takeawayOrder = orderType === 'takeaway'
+  const takeawayPackFee = state.cookingMethodPrices?.takeaway ?? 0
+  const cookingMethodRows = useMemo(() => {
+    let list = takeawayOrder ? COOKING_METHODS.filter((m) => m.id !== 'dine_in') : [...COOKING_METHODS]
+    if (takeawayOrder && takeawayPackFee <= 0) {
+      list = list.filter((m) => m.id !== 'takeaway')
+    }
+    return list
+  }, [takeawayOrder, takeawayPackFee])
 
   // Loading state (order being created)
   if (!activeOrderId) return (
@@ -262,9 +273,21 @@ export default function MenuScreen({ tableId, orderId: existingOrderId, orderTyp
       {tempItem && (
         <Modal onClose={() => setTempItem(null)}>
           <h3 style={S.modalTitle}>🍽️ {tempItem.name}</h3>
-          <div style={S.modalSection}>{t('dineIn')} / {t('takeaway')}</div>
-          {COOKING_METHODS.map(method => (
-            <button key={method.id} onClick={() => onCookingMethodComplete(method)} style={S.methodBtn}>
+          <div style={S.modalSection}>
+            {takeawayOrder ? t('takeawayExtrasPrompt') : `${t('dineIn')} / ${t('takeaway')}`}
+          </div>
+          {takeawayOrder && takeawayPackFee <= 0 && (
+            <button
+              key="takeaway-plain"
+              type="button"
+              onClick={() => onCookingMethodComplete(COOKING_METHODS.find((m) => m.id === 'takeaway'))}
+              style={S.methodBtn}
+            >
+              <span style={{ fontWeight: 600, color: 'var(--text)' }}>{t('takeaway')}</span>
+            </button>
+          )}
+          {cookingMethodRows.map((method) => (
+            <button key={method.id} type="button" onClick={() => onCookingMethodComplete(method)} style={S.methodBtn}>
               <span style={{ fontWeight: 600, color: 'var(--text)' }}>{t(method.key)}</span>
               {state.cookingMethodPrices[method.id] > 0 && (
                 <span style={{ color: 'var(--primary)', fontWeight: 700 }}>

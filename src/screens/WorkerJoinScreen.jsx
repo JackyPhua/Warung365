@@ -3,6 +3,7 @@ import React, { useEffect, useMemo, useRef, useState } from 'react'
 import { BrowserMultiFormatReader } from '@zxing/browser'
 import { useApp } from '../context/AppContext'
 import DispatchService from '../services/DispatchService'
+import { scrollFieldIntoView } from '../utils/focusScroll'
 
 export default function WorkerJoinScreen({ onNavigate }) {
   const { t, dispatch } = useApp()
@@ -168,6 +169,10 @@ export default function WorkerJoinScreen({ onNavigate }) {
             style={S.input}
             value={workerName}
             onChange={(e) => setWorkerName(e.target.value)}
+            onFocus={(e) => {
+              scrollFieldIntoView(e.currentTarget)
+              focusNameInputHard()
+            }}
             onInput={(e) => setWorkerName(e.currentTarget.value)}
             onPointerDown={(e) => e.stopPropagation()}
             onTouchEnd={(e) => {
@@ -188,9 +193,10 @@ export default function WorkerJoinScreen({ onNavigate }) {
         <div style={S.section}>
           <div style={S.sectionTitle}>🧾 {t('joinJson')}</div>
           <textarea
-            style={S.textarea}
+            style={{ ...S.textarea, fontSize: 16 }}
             value={jsonText}
             onChange={e => setJsonText(e.target.value)}
+            onFocus={(e) => scrollFieldIntoView(e.currentTarget)}
             placeholder={'{ "t": "WORKER_JOIN", "storeId": "STORE-001", "port": 8765 }'}
             rows={6}
           />
@@ -209,14 +215,29 @@ export default function WorkerJoinScreen({ onNavigate }) {
 }
 
 const S = {
-  container: { display: 'flex', flexDirection: 'column', height: '100%', background: 'var(--bg)' },
+  container: {
+    flex: 1,
+    display: 'flex',
+    flexDirection: 'column',
+    minHeight: 0,
+    height: '100%',
+    background: 'var(--bg)',
+  },
   header: {
     display: 'flex', alignItems: 'center', justifyContent: 'space-between',
     padding: '12px 18px', background: 'var(--bg-card)', borderBottom: '1px solid var(--border)',
   },
   backBtn: { background: 'var(--bg-lighter)', color: 'var(--text)', border: '1px solid var(--border)', padding: '8px 14px', borderRadius: 10, fontSize: 14 },
   // Use overflowY:'scroll' not 'auto' — Android WebView handles scroll+input better with 'scroll'
-  scroll: { flex: 1, overflowY: 'scroll', WebkitOverflowScrolling: 'touch', padding: 16 },
+  scroll: {
+    flex: 1,
+    minHeight: 0,
+    overflowY: 'scroll',
+    WebkitOverflowScrolling: 'touch',
+    padding: 16,
+    paddingBottom: 40,
+    overscrollBehavior: 'contain',
+  },
   warn: { background: 'var(--warning-light)', border: '1px solid var(--warning)', color: '#92400E', padding: 12, borderRadius: 10, marginBottom: 12, fontSize: 12, lineHeight: 1.6 },
   section: { background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 14, padding: 16, marginBottom: 12 },
   sectionTitle: { color: 'var(--text)', fontSize: 13, fontWeight: 800, marginBottom: 10 },

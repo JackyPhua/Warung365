@@ -3,6 +3,8 @@ import React, { useState } from 'react'
 import { useApp } from '../context/AppContext'
 import PrinterService from '../services/PrinterService'
 import LicenseService from '../services/LicenseService'
+import DispatchService from '../services/DispatchService'
+import { scrollFieldIntoView } from '../utils/focusScroll'
 
 const DEV_PASSWORD = 'dev2024'
 
@@ -41,7 +43,9 @@ export default function SettingsScreen({ onNavigate }) {
     const result = LicenseService.validateKey(licenseKey)
     if (result.valid) {
       dispatch({ type: 'SET_LICENSE', payload: { key: result.key, type: result.type, expiry: result.expiry } })
-      alert(`✅ ${t('success')} — 30 days`); setLicenseKey('')
+      const n = result.months ?? 1
+      alert(`✅ ${t('success')}\n${t('licenseActivatedFor').replace('{n}', String(n))}`)
+      setLicenseKey('')
     } else alert(`❌ Invalid key`)
   }
 
@@ -94,11 +98,19 @@ export default function SettingsScreen({ onNavigate }) {
               {t('expired')}: {state.licenseExpiry ? new Date(state.licenseExpiry).toLocaleDateString() : '-'}
             </div>
           </div>
-          <div style={S.inputRow}>
-            <input style={S.input} value={licenseKey}
+          <div style={{ ...S.inputRow, flexDirection: 'column', alignItems: 'stretch', gap: 12 }}>
+            <input
+              style={{ ...S.input, fontSize: 16, minHeight: 46 }}
+              value={licenseKey}
               onChange={e => setLicenseKey(e.target.value.toUpperCase())}
-              placeholder="POS-XXXX-XXXX-XXXX" />
-            <button style={S.goldBtn} onClick={activateLicense}>{t('activate')}</button>
+              onFocus={(e) => scrollFieldIntoView(e.currentTarget)}
+              placeholder="POS-01MT-XXXX-XXXX"
+              enterKeyHint="done"
+              autoCapitalize="characters"
+              autoCorrect="off"
+              spellCheck={false}
+            />
+            <button type="button" style={{ ...S.goldBtn, width: '100%', padding: 14 }} onClick={activateLicense}>{t('activate')}</button>
           </div>
         </Section>
 
@@ -126,16 +138,17 @@ export default function SettingsScreen({ onNavigate }) {
             <div style={{ color: 'var(--text-muted)', fontSize: 12, marginBottom: 12 }}>
               {t('devPasswordHint')}
             </div>
-            <div style={S.inputRow}>
+            <div style={{ ...S.inputRow, flexDirection: 'column', alignItems: 'stretch', gap: 12 }}>
               <input type="password" style={{
-                ...S.input, textAlign: 'center', letterSpacing: 4,
+                ...S.input, fontSize: 16, minHeight: 46, width: '100%', textAlign: 'center', letterSpacing: 4,
                 borderColor: devError ? 'var(--danger)' : 'var(--border)',
               }}
                 value={devPassword}
                 onChange={e => { setDevPassword(e.target.value); setDevError('') }}
                 onKeyDown={e => e.key === 'Enter' && tryDevUnlock()}
+                onFocus={(e) => scrollFieldIntoView(e.currentTarget)}
                 placeholder={t('enterPassword')} />
-              <button style={S.goldBtn} onClick={tryDevUnlock}>🔓</button>
+              <button type="button" style={{ ...S.goldBtn, width: '100%' }} onClick={tryDevUnlock}>🔓</button>
             </div>
             {devError && <div style={{ color: 'var(--danger)', fontSize: 13, marginTop: 8, fontWeight: 600 }}>{devError}</div>}
           </Section>
@@ -171,6 +184,36 @@ export default function SettingsScreen({ onNavigate }) {
                   )
                 })}
               </div>
+            </Section>
+
+            <Section title={t('devSyncHost')} icon="📡">
+              <div style={{ color: 'var(--text-muted)', fontSize: 12, marginBottom: 14, lineHeight: 1.55 }}>
+                {t('devSyncHostHint')}
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  const next = !state.developerSyncHostEnabled
+                  if (!next) {
+                    DispatchService.stop().catch(() => {})
+                    dispatch({ type: 'SET_HOST_RUNNING', payload: false })
+                    dispatch({ type: 'SET_HOST_IP', payload: null })
+                    dispatch({ type: 'SET_JOIN_JSON', payload: null })
+                    dispatch({ type: 'SET_CONNECTED_CLIENTS', payload: [] })
+                  }
+                  dispatch({ type: 'SET_DEVELOPER_SYNC_HOST_ENABLED', payload: next })
+                }}
+                style={{
+                  width: '100%', padding: 14, borderRadius: 12,
+                  border: `2px solid ${state.developerSyncHostEnabled ? 'var(--success)' : 'var(--border)'}`,
+                  background: state.developerSyncHostEnabled ? 'var(--success-light)' : 'var(--bg-lighter)',
+                  fontWeight: 700,
+                  fontSize: 15,
+                  color: 'var(--text)',
+                }}
+              >
+                {state.developerSyncHostEnabled ? `✅ ${t('devSyncHostOn')}` : `⬜ ${t('devSyncHostOff')}`}
+              </button>
             </Section>
 
             <Section title={t('shopName')} icon="🏪">
@@ -279,9 +322,10 @@ export default function SettingsScreen({ onNavigate }) {
               {t('importConfigHint')}
             </div>
             <textarea
-              style={M.textarea}
+              style={{ ...M.textarea, fontSize: 16 }}
               value={importText}
               onChange={e => setImportText(e.target.value)}
+              onFocus={(e) => scrollFieldIntoView(e.currentTarget)}
               placeholder={'{\n  "storeId": "STORE-001",\n  "shopName": "Warung365"\n}'}
               rows={6}
             />
@@ -306,7 +350,14 @@ function Section({ title, icon, children }) {
 }
 
 const S = {
-  container: { display: 'flex', flexDirection: 'column', height: '100%', background: 'var(--bg)' },
+  container: {
+    flex: 1,
+    display: 'flex',
+    flexDirection: 'column',
+    minHeight: 0,
+    height: '100%',
+    background: 'var(--bg)',
+  },
   header: {
     display: 'flex', alignItems: 'center', justifyContent: 'space-between',
     padding: '12px 18px', background: 'var(--bg-card)', borderBottom: '1px solid var(--border)',
@@ -315,7 +366,15 @@ const S = {
     background: 'var(--bg-lighter)', color: 'var(--text)', border: '1px solid var(--border)',
     padding: '8px 14px', borderRadius: 10, fontSize: 14,
   },
-  scroll: { flex: 1, overflow: 'auto', padding: 16 },
+  scroll: {
+    flex: 1,
+    minHeight: 0,
+    overflowY: 'auto',
+    WebkitOverflowScrolling: 'touch',
+    padding: 16,
+    paddingBottom: 32,
+    overscrollBehavior: 'contain',
+  },
   section: {
     background: 'var(--bg-card)', borderRadius: 14, padding: 16, marginBottom: 12,
     border: '1px solid var(--border)',
@@ -329,7 +388,7 @@ const S = {
   inputRow: { display: 'flex', gap: 10 },
   input: {
     flex: 1, background: 'var(--bg-input)', border: '1px solid var(--border)',
-    borderRadius: 10, padding: '10px 14px', fontSize: 14, color: 'var(--text)',
+    borderRadius: 10, padding: '12px 14px', fontSize: 16, color: 'var(--text)', minHeight: 46,
   },
   saveBtn: {
     background: 'var(--grad-primary)', color: '#FFFFFF',
@@ -365,7 +424,8 @@ const M = {
     display: 'flex', alignItems: 'flex-end', justifyContent: 'center', zIndex: 200, animation: 'fadeIn 0.15s',
   },
   box: {
-    width: '100%', maxWidth: 520, background: 'var(--bg-card)',
+    width: '100%', maxWidth: 520, maxHeight: 'min(82vh, 640px)', overflowY: 'auto', WebkitOverflowScrolling: 'touch',
+    background: 'var(--bg-card)',
     borderRadius: '20px 20px 0 0', padding: 18, animation: 'slideUp 0.25s',
     borderTop: '3px solid var(--primary)',
   },

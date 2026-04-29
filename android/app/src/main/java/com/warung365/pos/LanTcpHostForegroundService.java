@@ -16,10 +16,11 @@ import androidx.core.app.NotificationCompat;
 
 /**
  * Keeps the LAN TCP host reachable while the tablet screen is off (Doze / WiFi power save).
- * Started when {@link LanTcpPlugin#startServer} binds; stopped when the server stops.
+ * Started from {@link LanTcpPlugin#startServer} on the UI thread before bind (Wi‑Fi wake early); stopped when the server stops.
  */
 public class LanTcpHostForegroundService extends Service {
-  static final String CHANNEL_ID = "warung365_lan_host";
+  /** Bump when notification channel significance changes (channels are immutable once created). */
+  static final String CHANNEL_ID = "warung365_lan_host_v2";
   static final int NOTIFICATION_ID = 76001;
 
   private WifiManager.WifiLock wifiLock;
@@ -36,7 +37,7 @@ public class LanTcpHostForegroundService extends Service {
       NotificationChannel ch = new NotificationChannel(
         CHANNEL_ID,
         getString(R.string.lan_host_channel_name),
-        NotificationManager.IMPORTANCE_LOW
+        NotificationManager.IMPORTANCE_DEFAULT
       );
       ch.setDescription(getString(R.string.lan_host_channel_desc));
       NotificationManager nm = getSystemService(NotificationManager.class);
@@ -49,14 +50,17 @@ public class LanTcpHostForegroundService extends Service {
     releaseLocks();
     acquireLocks();
 
-    Notification notification = new NotificationCompat.Builder(this, CHANNEL_ID)
+    NotificationCompat.Builder nb = new NotificationCompat.Builder(this, CHANNEL_ID)
       .setContentTitle(getString(R.string.lan_host_notification_title))
       .setContentText(getString(R.string.lan_host_notification_text))
       .setSmallIcon(R.mipmap.ic_launcher)
       .setOngoing(true)
-      .setPriority(NotificationCompat.PRIORITY_LOW)
-      .setCategory(NotificationCompat.CATEGORY_SERVICE)
-      .build();
+      .setPriority(NotificationCompat.PRIORITY_DEFAULT)
+      .setCategory(NotificationCompat.CATEGORY_SERVICE);
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+      nb.setForegroundServiceBehavior(Notification.FOREGROUND_SERVICE_IMMEDIATE);
+    }
+    Notification notification = nb.build();
 
     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
       startForeground(

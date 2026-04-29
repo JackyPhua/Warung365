@@ -6,9 +6,11 @@ import {
   CATEGORY_ICONS, CATEGORY_COLORS, ITEM_TYPES, DEPARTMENTS,
   getLocalizedName, getDefaultMenu,
 } from '../data/menuData'
-import { copyText, shareOrDownloadJson } from '../utils/exportHelpers'
+import { copyText, shareOrDownloadJson, shareOrDownloadBlob, isAndroidNative } from '../utils/exportHelpers'
+import { menuToXlsxBlob, xlsxBlobToMenu } from '../utils/menuExcel'
 
-// Inline translations for the manager screen itself
+const XLSX_MIME = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+
 const MANAGER_T = {
   zh: {
     title: '菜单管理', back: '返回',
@@ -34,6 +36,13 @@ const MANAGER_T = {
     share: '分享 / 存檔', shareDone: '已開啟分享，請選 Google Drive、記事本或傳給自己',
     downloadOk: '已觸發下載，請在「下載」或檔案管理員中查看',
     copyFailed: '無法複製，請改用「分享」或長按文字框全選複製',
+    excelExport: '导出 Excel (.xlsx)',
+    excelHint: '多个工作表：分类／品项／份量／选项。可在电脑上改完再「从 Excel 导入」。',
+    excelImport: '从 Excel 导入',
+    excelImportHint: '请使用本应用导出的 .xlsx（请勿改工作表名称）。',
+    excelDone: '已导出 Excel',
+    excelImportErr: 'Excel 导入失败：',
+    excelExportErr: '导出 Excel 失败：',
     apkHint: '手機 APK：建議用「分享」存到雲端或檔案；「複製」可貼到備忘錄。',
     placeholderName: '例: 面食', placeholderItem: '例: 云吞面',
     portionName: '份量名',
@@ -63,6 +72,13 @@ const MANAGER_T = {
     share: 'Share / Save', shareDone: 'Pick an app (Drive, Files, email) to save the backup',
     downloadOk: 'Download started — check Downloads or Files',
     copyFailed: 'Copy failed — use Share, or long-press the text to select all',
+    excelExport: 'Export Excel (.xlsx)',
+    excelHint: 'Sheets: Categories, Items, Portions, Group options — edit in Excel, then import.',
+    excelImport: 'Import from Excel',
+    excelImportHint: 'Use a .xlsx exported from this app (keep sheet names).',
+    excelDone: 'Excel exported',
+    excelImportErr: 'Excel import failed: ',
+    excelExportErr: 'Excel export failed: ',
     apkHint: 'On Android APK: use Share to save to Drive/Files; Copy for notes apps.',
     placeholderName: 'e.g. Noodles', placeholderItem: 'e.g. Wanton Mee',
     portionName: 'Portion name',
@@ -92,6 +108,13 @@ const MANAGER_T = {
     share: 'Kongsi / Simpan', shareDone: 'Pilih app untuk simpan (Drive, Fail, e-mel)',
     downloadOk: 'Muat turun dimulakan — semak folder Muat Turun',
     copyFailed: 'Salin gagal — guna Kongsi atau tekan lama teks untuk pilih semua',
+    excelExport: 'Eksport Excel (.xlsx)',
+    excelHint: 'Helaian berbilang — edit dalam Excel, kemudian import.',
+    excelImport: 'Import daripada Excel',
+    excelImportHint: 'Guna .xlsx dari app ini (jangan ubah nama helaian).',
+    excelDone: 'Excel dieksport',
+    excelImportErr: 'Import Excel gagal: ',
+    excelExportErr: 'Eksport Excel gagal: ',
     apkHint: 'APK Android: guna Kongsi untuk simpan ke Drive/Fail; Salin untuk nota.',
     placeholderName: 'cth: Mee', placeholderItem: 'cth: Mee Wantan',
     portionName: 'Nama saiz',
@@ -100,7 +123,7 @@ const MANAGER_T = {
 }
 
 export default function MenuManagerScreen({ onNavigate }) {
-  const { state, dispatch } = useApp()
+  const { state, dispatch, t } = useApp()
   const lang = state.language
   const mt = (key) => MANAGER_T[lang]?.[key] || MANAGER_T.en[key] || key
 
@@ -196,6 +219,7 @@ export default function MenuManagerScreen({ onNavigate }) {
         <ImportExport
           menu={state.menu}
           mt={mt}
+          t={t}
           onImport={(menu) => { dispatch({ type: 'SET_MENU', payload: menu }); setShowImportExport(false) }}
           onClose={() => setShowImportExport(false)}
         />
@@ -572,7 +596,7 @@ function ItemEditor({ item, lang, mt, onSave, onClose }) {
   )
 }
 
-function ImportExport({ menu, mt, onImport, onClose }) {
+function ImportExport({ menu, mt, t, onImport, onClose }) {
   const [jsonText, setJsonText] = useState(JSON.stringify(menu, null, 2))
 
   const handleImport = () => {
@@ -595,8 +619,60 @@ function ImportExport({ menu, mt, onImport, onClose }) {
     const name = `warung365_menu_${new Date().toISOString().slice(0, 10)}.json`
     const mode = await shareOrDownloadJson(jsonText, name)
     if (mode === 'aborted') return
-    if (mode === 'download') alert('✅ ' + mt('downloadOk'))
-    else alert('✅ ' + mt('shareDone'))
+    if (mode === 'saved_downloads') alert('✅ ' + t('exportSavedDownloads').replace('{name}', name))
+    else if (mode === 'saved_documents') alert('✅ ' + t('exportSavedDocuments').replace('{name}', name))
+    else if (mode === 'download' && isAndroidNative()) alert('✅ ' + t('exportDownloadOkAndroid'))
+    else if (mode === 'download') alert('✅ ' + mt('downloadOk'))
+    else alert('✅ ' + t('exportShareOk'))
+  }
+
+  const handleExcelExport = async () => {
+    try {
+      let parsedMenu
+      try {
+        parsedMenu = JSON.parse(jsonText)
+      } catch {
+        alert('JSON error')
+        return
+      }
+      if (!Array.isArray(parsedMenu)) {
+        alert('Format error')
+        return
+      }
+      const blob = menuToXlsxBlob(parsedMenu)
+      const fname = `warung365_menu_${new Date().toISOString().slice(0, 10)}.xlsx`
+      const mode = await shareOrDownloadBlob(blob, fname, XLSX_MIME)
+      if (mode === 'aborted') return
+      if (mode === 'saved_downloads') alert('✅ ' + t('exportSavedDownloads').replace('{name}', fname))
+      else if (mode === 'saved_documents') alert('✅ ' + t('exportSavedDocuments').replace('{name}', fname))
+      else if (mode === 'download' && isAndroidNative()) alert('✅ ' + t('exportDownloadOkAndroid'))
+      else if (mode === 'download') alert('✅ ' + mt('excelDone'))
+      else alert('✅ ' + t('exportShareOk'))
+    } catch (e) {
+      alert(mt('excelExportErr') + (e?.message ?? String(e)))
+    }
+  }
+
+  const handleExcelImport = () => {
+    const input = document.createElement('input')
+    input.type = 'file'
+    input.accept = '.xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+    input.onchange = async (ev) => {
+      const file = ev.target.files?.[0]
+      if (!file) return
+      try {
+        const buf = await file.arrayBuffer()
+        const parsed = xlsxBlobToMenu(buf)
+        if (confirm(mt('importConfirm'))) {
+          onImport(parsed)
+          setJsonText(JSON.stringify(parsed, null, 2))
+        }
+      } catch (e) {
+        alert(mt('excelImportErr') + (e.message || e))
+      }
+      input.value = ''
+    }
+    input.click()
   }
 
   return (
@@ -605,6 +681,19 @@ function ImportExport({ menu, mt, onImport, onClose }) {
       <div style={{ color: 'var(--text-light)', fontSize: 12, marginBottom: 10 }}>
         {mt('importHint')}
         <div style={{ marginTop: 6, fontSize: 11, opacity: 0.9 }}>📱 {mt('apkHint')}</div>
+      </div>
+      <div style={{
+        fontSize: 11, marginBottom: 10, padding: '10px 12px',
+        background: 'var(--bg)', borderRadius: 10, border: '1px dashed var(--border)',
+        color: 'var(--text-light)',
+      }}>
+        <div style={{ fontWeight: 700, color: 'var(--text)', marginBottom: 4 }}>📗 Excel</div>
+        {mt('excelHint')}
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginTop: 8 }}>
+          <button type="button" style={styles.flexBtn} onClick={handleExcelExport}>{mt('excelExport')}</button>
+          <button type="button" style={styles.flexBtn} onClick={handleExcelImport}>{mt('excelImport')}</button>
+        </div>
+        <div style={{ fontSize: 10, marginTop: 6 }}>{mt('excelImportHint')}</div>
       </div>
       <textarea
         style={{

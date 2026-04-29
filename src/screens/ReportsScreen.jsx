@@ -1,7 +1,8 @@
 // src/screens/ReportsScreen.jsx
 import React, { useState, useMemo } from 'react'
 import { useApp } from '../context/AppContext'
-import { shareOrDownloadJson } from '../utils/exportHelpers'
+import { shareOrDownloadJson, downloadBlob, shareOrDownloadBlob, isAndroidNative } from '../utils/exportHelpers'
+import { reportToXlsxBlob } from '../utils/reportExcel'
 
 export default function ReportsScreen({ onNavigate }) {
   const { state, dispatch, t } = useApp()
@@ -99,7 +100,17 @@ export default function ReportsScreen({ onNavigate }) {
     const json = JSON.stringify(data, null, 2)
     const mode = await shareOrDownloadJson(json, filename)
     if (mode === 'aborted') return
-    alert(mode === 'download' ? `✅ ${t('exportDownloadOk')}` : `✅ ${t('exportShareOk')}`)
+    if (mode === 'saved_downloads') {
+      alert(`✅ ${t('exportSavedDownloads').replace('{name}', filename)}`)
+    } else if (mode === 'saved_documents') {
+      alert(`✅ ${t('exportSavedDocuments').replace('{name}', filename)}`)
+    } else if (mode === 'download' && isAndroidNative()) {
+      alert(`✅ ${t('exportDownloadOkAndroid')}`)
+    } else if (mode === 'download') {
+      alert(`✅ ${t('exportDownloadOk')}`)
+    } else {
+      alert(`✅ ${t('exportShareOk')}`)
+    }
   }
 
   const exportCSV = () => {
@@ -121,14 +132,27 @@ export default function ReportsScreen({ onNavigate }) {
       ].join(',')
     })
     const csv = [headers.join(','), ...rows].join('\n')
-    const blob = new Blob([csv], { type: 'text/csv' })
-    const url = URL.createObjectURL(blob)
-    const a = document.createElement('a')
-    a.href = url
-    a.download = `warung365_sales_${new Date().toISOString().slice(0, 10)}.csv`
-    a.click()
-    URL.revokeObjectURL(url)
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' })
+    downloadBlob(blob, `warung365_sales_${new Date().toISOString().slice(0, 10)}.csv`)
     alert('✅ CSV exported!')
+  }
+
+  const exportXLSX = async () => {
+    const blob = reportToXlsxBlob(state)
+    const name = `warung365_report_${new Date().toISOString().slice(0, 10)}.xlsx`
+    const mode = await shareOrDownloadBlob(blob, name, 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+    if (mode === 'aborted') return
+    if (mode === 'saved_downloads') {
+      alert(`✅ ${t('exportSavedDownloads').replace('{name}', name)}`)
+    } else if (mode === 'saved_documents') {
+      alert(`✅ ${t('exportSavedDocuments').replace('{name}', name)}`)
+    } else if (mode === 'download' && isAndroidNative()) {
+      alert(`✅ ${t('exportDownloadOkAndroid')}`)
+    } else if (mode === 'download') {
+      alert(`✅ ${t('exportDownloadOk')}`)
+    } else {
+      alert(`✅ ${t('exportShareOk')}`)
+    }
   }
 
   return (
@@ -266,6 +290,16 @@ export default function ReportsScreen({ onNavigate }) {
                 <div style={{ fontWeight: 700, fontSize: 15 }}>📊 {t('exportCsv')}</div>
                 <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 4 }}>
                   {t('openWith')}
+                </div>
+              </div>
+              <span style={{ fontSize: 20 }}>→</span>
+            </button>
+
+            <button style={expStyles.optionBtn} onClick={exportXLSX}>
+              <div>
+                <div style={{ fontWeight: 700, fontSize: 15 }}>📗 {t('exportXlsx')}</div>
+                <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 4 }}>
+                  {t('exportXlsxHint')}
                 </div>
               </div>
               <span style={{ fontSize: 20 }}>→</span>

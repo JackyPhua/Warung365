@@ -59,8 +59,31 @@
   user-select: none; -webkit-user-select: none;
 }
 
-html, body, #root {
-  height: 100%; overflow: hidden;
+/* Inputs must allow selection & typing (global * would block some WebViews, e.g. Huawei) */
+input:not([type]),
+input[type='text'],
+input[type='search'],
+input[type='number'],
+input[type='password'],
+textarea {
+  user-select: text !important;
+  -webkit-user-select: text !important;
+  touch-action: manipulation;
+}
+
+html, body {
+  height: 100%;
+  margin: 0;
+  overflow: hidden;
+}
+
+/* Flex column lets inner scroll areas shrink (`min-height: 0`) when IME opens — avoids empty/black viewport on older WebViews/Huawei. */
+#root {
+  height: 100%;
+  min-height: 0;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
   font-family: -apple-system, BlinkMacSystemFont, 'PingFang SC', 'Microsoft YaHei', 'Segoe UI', Roboto, sans-serif;
   background: var(--bg);
   color: var(--text);

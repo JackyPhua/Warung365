@@ -12,6 +12,7 @@ const AppContext = createContext(null)
 function makeBroadcastPayload(state) {
   const {
     serverMode, hostRunning, hostIp, joinJson, connectedClients, deviceRole,
+    developerSyncHostEnabled,
     menu, completedOrders, ...sharedState
   } = state
   const tenMinAgo = Date.now() - 10 * 60 * 1000
@@ -19,6 +20,42 @@ function makeBroadcastPayload(state) {
     .filter(o => o.completedAt && new Date(o.completedAt).getTime() > tenMinAgo)
     .map(o => o.id)
   return { ...sharedState, recentCheckedOutIds }
+}
+
+/** Higher = more advanced kitchen flow — never downgrade when merging worker payloads into host */
+const KDS_RANK = { pending: 0, ready: 1, served: 2 }
+
+function kdsRank(s) {
+  if (s == null || s === '') return 0
+  return KDS_RANK[s] ?? 0
+}
+
+/** Keep the more advanced kds status (worker payloads must not erase host/KDS updates). */
+function mergeKdsPreferAdvanced(hostStatus, workerStatus) {
+  return kdsRank(hostStatus) >= kdsRank(workerStatus) ? (hostStatus || 'pending') : (workerStatus || 'pending')
+}
+
+/**
+ * Host merge for WORKER_ORDERS: per-item `kdsStatus` = max(host, worker) — worker cannot overwrite
+ * ready/served that KDS/host already recorded (was causing wrong state on other staff phones).
+ */
+function mergeWorkerOrderIntoHost(hostOrder, workerOrder) {
+  if (!workerOrder) return hostOrder
+  if (!hostOrder) return workerOrder
+  const hItems = hostOrder.items || []
+  const wItems = workerOrder.items || []
+  const wById = new Map(wItems.map(i => [i.id, i]))
+  const hIds = new Set(hItems.map(i => i.id))
+  const mergedItems = hItems.map(hi => {
+    const wi = wById.get(hi.id)
+    if (!wi) return hi
+    const kds = mergeKdsPreferAdvanced(hi.kdsStatus, wi.kdsStatus)
+    return { ...wi, ...hi, kdsStatus: kds }
+  })
+  for (const wi of wItems) {
+    if (!hIds.has(wi.id)) mergedItems.push(wi)
+  }
+  return { ...hostOrder, items: mergedItems }
 }
 
 export const TABLE_STATUS = {
@@ -62,7 +99,9 @@ const initialState = {
     extra: 1.0,
     extra_takeaway: 1.5,
   },
-  deviceRole: 'cashier', // 'cashier' | 'waiter'
+  deviceRole: 'waiter', // 'cashier' | 'waiter' — APK default: waiter (cashier/host sync via dev settings)
+  /** LAN "host/tablet starts server & QR only when enabled in Developer Settings — not for floor staff APKs */
+  developerSyncHostEnabled: false,
 }
 
 // Helper: recalculate table status based on its orderIds
@@ -91,6 +130,9 @@ function reducer(state, action) {
       return { ...state, cookingMethodPrices: { ...state.cookingMethodPrices, ...action.payload } }
     case 'SET_DEVICE_ROLE':
       return { ...state, deviceRole: action.payload }
+
+    case 'SET_DEVELOPER_SYNC_HOST_ENABLED':
+      return { ...state, developerSyncHostEnabled: !!action.payload }
 
     case 'SET_TABLE_COUNT': {
       const newCount = action.payload
@@ -298,11 +340,16 @@ function reducer(state, action) {
     case 'SET_CONNECTED_CLIENTS':
       return { ...state, connectedClients: action.payload }
 
-    // Host receives orders from worker → ADD new orders; derive table status from orders only
-    // (Worker no longer sends tables — prevents PAID ↔ EMPTY ping-pong during auto-clear)
+    // Host receives orders from worker → merge; removals must be explicit (worker omits cancelled ids)
+    // (Worker no longer sends tables — derives table occupancy from merged orders only)
     case 'MERGE_WORKER_ORDERS': {
-      const { orders: wOrders } = action.payload
-      const mergedOrders = { ...state.orders, ...wOrders }
+      const { orders: wOrders = {}, removedOrderIds = [] } = action.payload || {}
+      const mergedOrders = { ...state.orders }
+      for (const rid of removedOrderIds) delete mergedOrders[rid]
+      for (const [id, o] of Object.entries(wOrders)) {
+        const prev = mergedOrders[id]
+        mergedOrders[id] = prev ? mergeWorkerOrderIntoHost(prev, o) : o
+      }
       // Rebuild table orderIds by scanning all merged orders
       const mergedTables = state.tables.map(hostTable => {
         const allIds = [...new Set([
@@ -350,8 +397,14 @@ function reducer(state, action) {
         if (localOnly.length === 0) return hostTable
         return { ...hostTable, orderIds: [...hostTable.orderIds, ...localOnly], status: TABLE_STATUS.OCCUPIED }
       })
-      // Don't overwrite worker's own completedOrders/menu — host's copies can be stale or large
-      const { completedOrders: _c, recentCheckedOutIds: _r, menu: _m, ...safeHostState } = hostState
+      // Never apply host tablet's local-dev flags onto worker phones
+      const {
+        completedOrders: _c,
+        recentCheckedOutIds: _r,
+        menu: _m,
+        developerSyncHostEnabled: _ignoredDevHost,
+        ...safeHostState
+      } = hostState
       return { ...state, ...safeHostState, orders: mergedOrders, tables: mergedTables }
     }
 
@@ -383,6 +436,8 @@ export function AppProvider({ children }) {
   const stateRef = useRef(state)
   // Prevent sync loops: when state change is from network, skip re-sending
   const syncFromNetwork = useRef(false)
+  /** Track worker order IDs so locally removed orders flush to host (release table / cancel / checkout). */
+  const prevWorkerOrderIdsRef = useRef(null)
 
   useEffect(() => {
     try {
@@ -457,15 +512,24 @@ export function AppProvider({ children }) {
     }
   }, [isWorker])
 
-  // LAN sync: worker sends orders to host when they change (no tables — prevents PAID ping-pong)
+  // LAN sync: worker sends orders to host when they change; include removed IDs so host drops cancelled orders (fixes table flicker red after Release)
   useEffect(() => {
     if (!DispatchService.isNative) return
     if (!isWorker) return
     if (DispatchService.mode !== 'worker') return
+    const currIds = new Set(Object.keys(state.orders))
+    const prevSnap = prevWorkerOrderIdsRef.current
+    let removedOrderIds = []
+    if (prevSnap !== null) {
+      removedOrderIds = [...prevSnap].filter((id) => !currIds.has(id))
+    }
+    prevWorkerOrderIdsRef.current = currIds
+
     if (syncFromNetwork.current) return
     const id = setTimeout(() => {
       if (syncFromNetwork.current) return
-      DispatchService.sendOrdersToHost(state.orders).catch(() => {})
+      const opts = removedOrderIds.length ? { removedOrderIds } : {}
+      DispatchService.sendOrdersToHost(state.orders, opts).catch(() => {})
     }, 300)
     return () => clearTimeout(id)
   }, [state.orders, isWorker])
@@ -474,8 +538,8 @@ export function AppProvider({ children }) {
   useEffect(() => {
     if (!DispatchService.isNative) return
     if (isWorker) return
-    const handler = (orders) => {
-      dispatch({ type: 'MERGE_WORKER_ORDERS', payload: { orders } })
+    const handler = ({ orders = {}, removedOrderIds = [] } = {}) => {
+      dispatch({ type: 'MERGE_WORKER_ORDERS', payload: { orders, removedOrderIds } })
     }
     DispatchService.onWorkerOrders = handler
     return () => {
